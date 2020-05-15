@@ -37,6 +37,8 @@ test:
       - '*/build/reports'
     expire_in: 1 month
 
+  coverage: '/^Coverage:\s+(\d+(?:\.\d+)?)%/'
+
 publish:
   stage: publish
   script:
