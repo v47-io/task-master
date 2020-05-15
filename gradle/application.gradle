@@ -1,0 +1,48 @@
+import proguard.gradle.ProGuardTask
+
+buildscript {
+    repositories {
+        maven { url nexusUrl }
+    }
+    dependencies {
+        classpath 'net.sf.proguard:proguard-gradle:6.3.0beta1'
+    }
+}
+
+apply plugin: 'application'
+apply plugin: 'org.jetbrains.kotlin.kapt'
+apply plugin: 'com.gorylenko.gradle-git-properties'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+dependencies {
+    runtimeOnly libraries.logback
+}
+
+shadowJar {
+    mergeServiceFiles()
+}
+
+task('proguard', type: ProGuardTask, group: 'proguard') {
+    verbose()
+
+    injars shadowJar.getOutputs().files, filter: '!module-info.class'
+    outjars "${project.buildDir}/libs/${project.name}-${project.version}-reduced.jar"
+
+    libraryjars(
+            fileTree(dir: "${System.getProperty('java.home')}/jmods", include: '**/*.jmod'),
+            jarfilter: '!**.jar',
+            filter: '!module-info.class'
+    )
+
+    libraryjars configurations.runtime.files
+
+    configuration fileTree(dir: "${project.rootDir}/proguard", include: '**/*.pro')
+}
+
+publishing {
+    publications {
+        shadow(MavenPublication) { publication ->
+            project.shadow.component(publication)
+        }
+    }
+}

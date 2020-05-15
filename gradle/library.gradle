@@ -1,0 +1,14 @@
+publishing {
+    publications {
+        mavenProject(MavenPublication) {
+            from components.java
+            groupId project.group
+            artifactId project.name
+            version project.version
+
+            artifact packageSources {
+                classifier 'sources'
+            }
+        }
+    }
+}

@@ -1,0 +1,228 @@
+buildscript {
+    repositories {
+        maven { url nexusUrl }
+    }
+}
+
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.3.72' apply false
+    id 'org.jetbrains.kotlin.kapt' version '1.3.72' apply false
+
+    id 'com.gorylenko.gradle-git-properties' version '2.2.2' apply false
+
+    id 'io.gitlab.arturbosch.detekt' version '1.7.4' apply false
+    id 'jacoco'
+    id 'de.jansauer.printcoverage' version '2.0.0'
+
+    id 'net.researchgate.release' version '2.8.1'
+
+    id 'com.github.hierynomus.license' version '0.15.0' apply false
+
+    id 'com.github.johnrengelman.shadow' version '5.2.0' apply false
+}
+
+apply from: 'gradle/libraries.gradle'
+
+subprojects {
+    apply plugin: 'org.jetbrains.kotlin.jvm'
+
+    apply plugin: 'io.gitlab.arturbosch.detekt'
+    apply plugin: 'jacoco'
+
+    apply plugin: 'com.github.hierynomus.license'
+
+    apply plugin: 'maven-publish'
+
+    sourceSets {
+        main {
+            kotlin {
+                srcDirs {
+                    'src'
+                }
+            }
+            java {
+                srcDir 'src-java'
+                srcDir 'src-gen'
+            }
+            resources {
+                srcDir 'resources'
+                srcDir 'resources-gen'
+            }
+        }
+        test {
+            kotlin {
+                srcDirs {
+                    'test'
+                }
+            }
+            java {
+                srcDir 'test-java'
+            }
+            resources {
+                srcDir 'test-resources'
+            }
+        }
+    }
+
+    sourceCompatibility = 11
+    targetCompatibility = 11
+
+    compileKotlin {
+        kotlinOptions {
+            freeCompilerArgs = [
+                    '-Xno-param-assertions',
+                    '-Xno-call-assertions'
+            ]
+            jvmTarget = '11'
+            javaParameters = true
+        }
+    }
+
+    compileTestKotlin {
+        kotlinOptions {
+            jvmTarget = '11'
+            javaParameters = true
+        }
+    }
+
+    repositories {
+        maven { url nexusUrl }
+    }
+
+    apply from: '../gradle/libraries.gradle'
+
+    dependencies {
+        implementation libraries.stdlib
+        implementation libraries.reflect
+
+        implementation libraries.slf4j
+
+        testImplementation libraries.junit
+        testRuntimeOnly libraries.logback
+    }
+
+    clean {
+        delete files('src-gen')
+        delete files('resources-gen')
+    }
+
+    detekt {
+        input = files('src')
+        config = files("$rootDir/detekt.yml")
+
+        reports {
+            xml {
+                enabled = true
+                destination = file("$buildDir/reports/detekt.xml")
+            }
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    jacocoTestReport {
+        reports {
+            xml.enabled true
+        }
+    }
+
+    license {
+        exclude '**/*.json'
+        exclude '**/*.properties'
+        exclude '**/META-INF/**/*'
+
+        header = file('../HEADER.txt')
+
+        ext {
+            year = Calendar.getInstance().get(Calendar.YEAR)
+        }
+    }
+
+    task packageSources(type: Jar) {
+        archiveClassifier = 'sources'
+        from sourceSets.main.allSource
+    }
+
+    artifacts.archives packageSources
+
+    publishing {
+        def nexusUser = project.hasProperty('nexusUser') ? project.property('nexusUser') : System.getenv('NEXUS_USER')
+        def nexusPass = project.hasProperty('nexusPass') ? project.property('nexusPass') : System.getenv('NEXUS_PASS')
+
+        if (nexusUser != null && nexusPass != null) {
+            repositories {
+                maven {
+                    name 'nexus'
+
+                    if (project.version.endsWith('-SNAPSHOT'))
+                        url 'https://nexus.vemilyus.com/repository/snapshots/'
+                    else
+                        url 'https://nexus.vemilyus.com/repository/releases/'
+
+                    credentials(PasswordCredentials) {
+                        username nexusUser
+                        password nexusPass
+                    }
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    maven { url nexusUrl }
+}
+
+release {
+    tagTemplate = 'v$version'
+}
+
+task build(group: 'build') {
+    dependsOn subprojects.findResults { it.tasks.findByName('build') }
+}
+
+task clean(group: 'build') {
+    dependsOn subprojects.findResults { it.tasks.findByName('clean') }
+
+    delete files('build')
+}
+
+task test(group: 'verification') {
+    dependsOn subprojects.findResults { it.tasks.findByName('test') }
+}
+
+task jacocoRootReport(type: JacocoReport, group: 'verification') {
+    description = 'Generates an aggregate report from all subprojects'
+
+    dependsOn(subprojects.test)
+
+    additionalSourceDirs.from files(subprojects.sourceSets.main.allSource.srcDirs)
+    sourceDirectories.from files(subprojects.sourceSets.main.allSource.srcDirs)
+    classDirectories.from files(subprojects.sourceSets.main.output)
+    executionData.from files(subprojects.jacocoTestReport.executionData)
+
+    doFirst {
+        executionData.from files(executionData.findAll { it.exists() })
+    }
+
+    reports {
+        html.enabled = true
+        xml.enabled = true
+    }
+}
+
+task copyJacocoRootReport(type: Copy) {
+    from (jacocoRootReport) {
+        include "jacocoRootReport.xml"
+    }
+
+    rename("jacocoRootReport.xml", "jacocoTestReport.xml")
+    into "$buildDir/reports/jacoco/test"
+}
+
+jacocoRootReport.finalizedBy(copyJacocoRootReport)
+
+printCoverage.dependsOn jacocoRootReport
+test.finalizedBy(printCoverage)

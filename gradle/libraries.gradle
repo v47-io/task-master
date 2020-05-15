@@ -1,0 +1,24 @@
+ext {
+    // Core libraries
+    slf4jVersion = '1.7.30'
+
+    // Implementation libraries
+    logbackVersion = '1.2.3'
+
+    // Testing libraries
+    junitVersion = '5.6.2'
+
+    libraries = [
+            // Core libraries
+            stdlib     : 'org.jetbrains.kotlin:kotlin-stdlib-jdk8',
+            reflect    : 'org.jetbrains.kotlin:kotlin-reflect',
+            slf4j      : "org.slf4j:slf4j-api:$slf4jVersion",
+
+            // Implementation libraries
+            logback    : "ch.qos.logback:logback-classic:$logbackVersion",
+
+            // Testing libraries
+            junit      : "org.junit.jupiter:junit-jupiter:$junitVersion",
+            junitEngine: "org.junit.jupiter:junit-jupiter-engine:$junitVersion"
+    ]
+}
