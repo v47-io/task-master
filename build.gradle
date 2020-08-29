@@ -5,12 +5,12 @@ buildscript {
 }
 
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.3.72' apply false
-    id 'org.jetbrains.kotlin.kapt' version '1.3.72' apply false
+    id 'org.jetbrains.kotlin.jvm' version '1.4.0' apply false
+    id 'org.jetbrains.kotlin.kapt' version '1.4.0' apply false
 
-    id 'com.gorylenko.gradle-git-properties' version '2.2.2' apply false
+    id 'com.gorylenko.gradle-git-properties' version '2.2.3' apply false
 
-    id 'io.gitlab.arturbosch.detekt' version '1.7.4' apply false
+    id 'io.gitlab.arturbosch.detekt' version '1.12.0' apply false
     id 'jacoco'
     id 'de.jansauer.printcoverage' version '2.0.0'
 
@@ -18,10 +18,10 @@ plugins {
 
     id 'com.github.hierynomus.license' version '0.15.0' apply false
 
-    id 'com.github.johnrengelman.shadow' version '5.2.0' apply false
+    id 'com.github.johnrengelman.shadow' version '6.0.0' apply false
 }
 
-apply from: 'gradle/libraries.gradle'
+apply from: 'config/gradle/libraries.gradle'
 
 subprojects {
     apply plugin: 'org.jetbrains.kotlin.jvm'
@@ -89,7 +89,7 @@ subprojects {
         maven { url nexusUrl }
     }
 
-    apply from: '../gradle/libraries.gradle'
+    apply from: '../config/gradle/libraries.gradle'
 
     dependencies {
         implementation libraries.stdlib
@@ -108,7 +108,7 @@ subprojects {
 
     detekt {
         input = files('src')
-        config = files("$rootDir/detekt.yml")
+        config = files("$rootDir/config/detekt/detekt.yml")
 
         reports {
             xml {

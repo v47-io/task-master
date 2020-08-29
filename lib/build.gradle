@@ -1,1 +1,1 @@
-apply from: '../gradle/library.gradle'
+apply from: '../config/gradle/library.gradle'

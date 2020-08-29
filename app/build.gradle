@@ -1,4 +1,4 @@
-apply from: '../gradle/application.gradle'
+apply from: '../config/gradle/application.gradle'
 
 mainClassName = 'MainKt'
 
