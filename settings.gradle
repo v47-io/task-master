@@ -4,6 +4,6 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'root'
+rootProject.name = 'task-master'
 
-include 'lib', 'app'
+include 'api', 'impl'

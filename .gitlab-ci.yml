@@ -3,6 +3,10 @@ image: adoptopenjdk/openjdk11-openj9:alpine
 variables:
   GRADLE_OPTS: "--no-daemon --console=plain"
 
+cache:
+  paths:
+    - /cache/.gradle
+
 before_script:
   - chmod +x gradlew
 
@@ -11,14 +15,6 @@ stages:
   - test
   - publish
 
-  # We redirect the gradle user home using -g so that it caches the
-  # wrapper and dependencies.
-  # https://docs.gradle.org/current/userguide/gradle_command_line.html
-  #
-  # Unfortunately it also caches the build output so
-  # cleaning removes reminants of any cached builds.
-  # The assemble task actually builds the project.
-  # If it fails here, the tests can't run.
 build:
   stage: build
   script:

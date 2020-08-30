@@ -1,7 +1,0 @@
-apply from: '../config/gradle/application.gradle'
-
-mainClassName = 'MainKt'
-
-dependencies {
-    implementation project(':lib')
-}

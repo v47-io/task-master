@@ -13,12 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
+package io.v47.taskMaster.events
 
-class WorldTest {
-    @Test
-    fun `the name is correct`() {
-        assertEquals("World", World.name)
+import horus.events.EventKey
+import io.v47.taskMaster.TaskState
+
+sealed class TaskHandleEvent {
+    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
+        companion object : EventKey<StateChanged>
+    }
+
+    data class Completed(val output: Any) : TaskHandleEvent() {
+        companion object : EventKey<Completed>
+    }
+
+    data class Failed(val error: Throwable? = null) : TaskHandleEvent() {
+        companion object : EventKey<Failed>
     }
 }

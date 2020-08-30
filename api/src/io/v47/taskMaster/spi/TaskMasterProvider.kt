@@ -13,12 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
+package io.v47.taskMaster.spi
 
-class CreateHelloWorldTest {
-    @Test
-    fun `it creates the hello world string`() {
-        assertEquals("Hello, ${World.name}!", createHelloWorld())
-    }
+import io.v47.taskMaster.TaskMaster
+import kotlin.coroutines.CoroutineContext
+
+interface TaskMasterProvider {
+    fun create(
+        maxConcurrentTasks: Int = 3,
+        maxSuspendedTasks: Int = 10,
+        coroutineContext: CoroutineContext
+    ): TaskMaster
 }

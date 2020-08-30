@@ -1,0 +1,7 @@
+apply from: '../config/gradle/library.gradle'
+
+dependencies {
+    api libraries.horusEvents
+
+    implementation libraries.coroutines
+}

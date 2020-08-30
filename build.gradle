@@ -2,6 +2,10 @@ buildscript {
     repositories {
         maven { url nexusUrl }
     }
+
+    dependencies {
+        classpath 'org.jetbrains.kotlinx:binary-compatibility-validator:0.2.3'
+    }
 }
 
 plugins {
@@ -21,7 +25,13 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '6.0.0' apply false
 }
 
+apply plugin: 'binary-compatibility-validator'
+
 apply from: 'config/gradle/libraries.gradle'
+
+apiValidation {
+    ignoredProjects += ['impl']
+}
 
 subprojects {
     apply plugin: 'org.jetbrains.kotlin.jvm'
@@ -92,9 +102,6 @@ subprojects {
     apply from: '../config/gradle/libraries.gradle'
 
     dependencies {
-        implementation libraries.stdlib
-        implementation libraries.reflect
-
         implementation libraries.slf4j
 
         testImplementation libraries.junit

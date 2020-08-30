@@ -13,6 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-object World {
-    const val name = "World"
+package io.v47.taskMaster.events
+
+import io.v47.taskMaster.TaskHandle
+
+sealed class TaskMasterEvent {
+    abstract val taskHandle: TaskHandle<*, *>
+
+    data class TaskAdded(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
+
+    data class TaskRunning(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
+
+    data class TaskSuspended(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
+
+    data class TaskCompleted(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
+
+    data class TaskFailed(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
 }

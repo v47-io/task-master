@@ -1,0 +1,23 @@
+apply from: '../config/gradle/library.gradle'
+
+buildscript {
+    repositories {
+        maven { url nexusUrl }
+    }
+
+    dependencies {
+        classpath libraries.atomicFu
+    }
+}
+
+apply plugin: 'kotlinx-atomicfu'
+
+dependencies {
+    implementation project(':api')
+
+    implementation libraries.coroutines
+}
+
+atomicfu {
+    variant = 'VH'
+}
