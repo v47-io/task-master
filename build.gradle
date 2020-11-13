@@ -1,4 +1,4 @@
-buildscript {
+/*buildscript {
     repositories {
         maven { url nexusUrl }
     }
@@ -6,32 +6,30 @@ buildscript {
     dependencies {
         classpath 'org.jetbrains.kotlinx:binary-compatibility-validator:0.2.3'
     }
-}
+}*/
 
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.4.0' apply false
-    id 'org.jetbrains.kotlin.kapt' version '1.4.0' apply false
+    id 'org.jetbrains.kotlin.jvm' version '1.4.10' apply false
+    id 'org.jetbrains.kotlin.kapt' version '1.4.10' apply false
 
     id 'com.gorylenko.gradle-git-properties' version '2.2.3' apply false
 
-    id 'io.gitlab.arturbosch.detekt' version '1.12.0' apply false
+    id 'io.gitlab.arturbosch.detekt' version '1.14.2' apply false
     id 'jacoco'
     id 'de.jansauer.printcoverage' version '2.0.0'
 
     id 'net.researchgate.release' version '2.8.1'
 
     id 'com.github.hierynomus.license' version '0.15.0' apply false
-
-    id 'com.github.johnrengelman.shadow' version '6.0.0' apply false
 }
 
-apply plugin: 'binary-compatibility-validator'
+//apply plugin: 'binary-compatibility-validator'
 
 apply from: 'config/gradle/libraries.gradle'
 
-apiValidation {
+/*apiValidation {
     ignoredProjects += ['impl']
-}
+}*/
 
 subprojects {
     apply plugin: 'org.jetbrains.kotlin.jvm'

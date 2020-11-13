@@ -29,15 +29,18 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.spi
+package io.v47.taskMaster
 
-import io.v47.taskMaster.Configuration
-import io.v47.taskMaster.TaskMaster
-import kotlin.coroutines.CoroutineContext
+import org.junit.jupiter.api.TestInstance
 
-interface TaskMasterProvider {
-    fun create(
-        configuration: Configuration,
-        coroutineContext: CoroutineContext
-    ): TaskMaster
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TaskMasterTest {
+    /*@Test
+    fun `it should create a TaskMaster instance`() {
+        val taskMaster = assertDoesNotThrow {
+            TaskMaster()
+        }
+
+        assertNotNull(taskMaster)
+    }*/
 }

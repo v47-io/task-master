@@ -3,5 +3,8 @@ apply from: '../config/gradle/library.gradle'
 dependencies {
     api libraries.horusEvents
 
-    implementation libraries.coroutines
+    compileOnly libraries.coroutines
+
+    testImplementation libraries.coroutines
+    testRuntimeOnly project(':impl')
 }
