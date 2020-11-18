@@ -48,7 +48,7 @@ interface Task<I, O> {
 
     /**
      * This is called before the task is killed externally to
-     * release any external resources.
+     * release any external resources and perform clean-up.
      *
      * This function should never fail or throw any exceptions.
      */

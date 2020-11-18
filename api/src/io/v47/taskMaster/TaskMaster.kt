@@ -41,11 +41,7 @@ import kotlin.coroutines.CoroutineContext
 
 interface TaskMaster : EventEmitter {
     companion object {
-        private val providers = ServiceLoader
-            .load(TaskMasterProvider::class.java)
-            .apply {
-                reload()
-            }
+        private val providers = ServiceLoader.load(TaskMasterProvider::class.java)
 
         operator fun invoke(
             configuration: Configuration,
@@ -66,9 +62,10 @@ interface TaskMaster : EventEmitter {
 
             log.info("Creating TaskMaster using provider '{}'", provider::class.qualifiedName)
 
-            if ((reservedBudget ?: 0.0) / totalBudget > 0.75)
+            @Suppress("MagicNumber")
+            if ((reservedBudget ?: 0.0) / totalBudget > 0.667)
                 log.warn(
-                    "Reserved budget is more than three quarters of defined total budget. " +
+                    "Reserved budget is more than two thirds of defined total budget. " +
                             "This may impact task execution performance."
                 )
 
@@ -78,12 +75,17 @@ interface TaskMaster : EventEmitter {
             if (maximumDebt == null)
                 log.warn("No maximum debt configured. Too many suspended tasks could lead to resource exhaustion")
 
-
             return provider.create(
                 configuration,
                 coroutineContext
             )
         }
+
+        operator fun invoke(configurationBlock: Configuration.Builder.() -> Unit) =
+            ConfigurationBuilderImpl().let { builder ->
+                builder.configurationBlock()
+                TaskMaster(builder.build(), builder.coroutineContext)
+            }
     }
 
     val taskHandles: Set<TaskHandle<*, *>>
@@ -102,13 +104,6 @@ interface TaskMaster : EventEmitter {
     suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>)
 
     suspend fun stop(killRunning: Boolean = false)
-}
-
-fun taskMaster(configurationBlock: Configuration.Builder.() -> Unit): TaskMaster {
-    val builder = ConfigurationBuilderImpl()
-    builder.configurationBlock()
-
-    return TaskMaster(builder.build(), builder.coroutineContext)
 }
 
 data class Configuration(
