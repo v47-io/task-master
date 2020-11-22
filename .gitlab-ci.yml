@@ -5,7 +5,7 @@ variables:
 
 cache:
   paths:
-    - /cache/.gradle
+    - .cache/.gradle
 
 before_script:
   - chmod +x gradlew
@@ -18,13 +18,13 @@ stages:
 build:
   stage: build
   script:
-  - ./gradlew -g /cache/.gradle clean assemble
+  - ./gradlew -g .cache/.gradle clean assemble
   allow_failure: false
 
 test:
   stage: test
   script:
-    - ./gradlew -g /cache/.gradle test
+    - ./gradlew -g .cache/.gradle test
   allow_failure: false
   artifacts:
     when: on_failure
@@ -38,4 +38,4 @@ test:
 publish:
   stage: publish
   script:
-    - ./gradlew -g /cache/.gradle publish
+    - ./gradlew -g .cache/.gradle publish
