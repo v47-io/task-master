@@ -82,12 +82,12 @@ class TaskHandleImplTest {
 
         taskHandle.run()
 
-        delay(500)
+        delay(50)
 
         A.assertEquals(TaskHandleImpl.SuspendResult.Suspended, taskHandle.suspend())
         A.assertEquals(TaskState.Suspended, taskHandle.state)
 
-        delay(500)
+        delay(50)
 
         A.assertEquals(TaskHandleImpl.ResumeResult.Resumed, taskHandle.resume())
         A.assertEquals(TaskState.Running, taskHandle.state)
@@ -158,7 +158,7 @@ class TaskHandleImplTest {
 
         taskHandle.run()
 
-        delay(500)
+        delay(50)
 
         A.assertEquals(TaskHandleImpl.SuspendResult.Failed, taskHandle.suspend())
         A.assertEquals(TaskState.Running, taskHandle.state)
@@ -182,7 +182,7 @@ class TaskHandleImplTest {
 
         taskHandle.run()
 
-        delay(500)
+        delay(50)
 
         A.assertEquals(TaskHandleImpl.SuspendResult.Suspended, taskHandle.suspend())
         A.assertEquals(TaskState.Suspended, taskHandle.state)
