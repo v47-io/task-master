@@ -58,7 +58,7 @@ interface TaskMaster : EventEmitter {
             val provider = providers.findFirst().orElse(null)
                 ?: throw ServiceConfigurationError("No TaskMasterProvider implementation found on classpath!")
 
-            val log: Logger = LoggerFactory.getLogger(provider.javaClass)
+            val log: Logger = LoggerFactory.getLogger(TaskMaster::class.java)
 
             log.info("Creating TaskMaster using provider '{}'", provider::class.qualifiedName)
 
@@ -90,8 +90,8 @@ interface TaskMaster : EventEmitter {
 
     val taskHandles: Set<TaskHandle<*, *>>
 
-    suspend fun <T : Task<I, O>, I, O> add(
-        factory: TaskFactory<T, I, O>,
+    suspend fun <I, O> add(
+        factory: TaskFactory<I, O>,
         input: I,
         priority: Int = TaskPriority.NORMAL,
         runCondition: RunCondition? = null

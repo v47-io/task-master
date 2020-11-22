@@ -29,21 +29,22 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.events
+package mocks
 
-import horus.events.EventKey
-import io.v47.taskMaster.TaskState
+import io.v47.taskMaster.Task
+import kotlinx.coroutines.delay
 
-sealed class TaskHandleEvent {
-    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
-        companion object : EventKey<StateChanged>
+class MockTask(private val input: MockTaskInput) : Task<MockTaskInput, Unit> {
+    override suspend fun run() {
+        if (input.failWhileRunning) {
+            delay(input.duration / 2)
+            throw IllegalArgumentException("This is a random failure")
+        } else
+            delay(input.duration)
     }
 
-    data class Completed(val output: Any) : TaskHandleEvent() {
-        companion object : EventKey<Completed>
-    }
-
-    data class Failed(val error: Throwable) : TaskHandleEvent() {
-        companion object : EventKey<Failed>
+    override suspend fun clean() {
+        if (input.failDuringCleanUp)
+            throw IllegalArgumentException("Failed to clean")
     }
 }

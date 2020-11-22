@@ -29,21 +29,18 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.events
+package mocks
 
-import horus.events.EventKey
-import io.v47.taskMaster.TaskState
+import io.v47.taskMaster.RunCondition
 
-sealed class TaskHandleEvent {
-    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
-        companion object : EventKey<StateChanged>
-    }
-
-    data class Completed(val output: Any) : TaskHandleEvent() {
-        companion object : EventKey<Completed>
-    }
-
-    data class Failed(val error: Throwable) : TaskHandleEvent() {
-        companion object : EventKey<Failed>
-    }
-}
+data class MockTaskInput(
+    val cost: Double = 0.0,
+    val duration: Long = 1000,
+    val failWhileRunning: Boolean = false,
+    val failDuringCleanUp: Boolean = false,
+    val suspendable: Boolean = false,
+    val setSuspended: Boolean = true,
+    val failToSuspend: Boolean = false,
+    val failToResume: Boolean = false,
+    val runCondition: RunCondition? = null
+)

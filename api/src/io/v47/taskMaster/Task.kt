@@ -44,15 +44,13 @@ interface Task<I, O> {
     /**
      * This is where the actual work of the task happens.
      */
-    suspend fun run(input: I): O
+    suspend fun run(): O
 
     /**
-     * This is called before the task is killed externally to
-     * release any external resources and perform clean-up.
-     *
-     * This function should never fail or throw any exceptions.
+     * This is called if the task failed or was killed to
+     * release resources and clean-up dirty data
      */
-    suspend fun kill()
+    suspend fun clean()
 }
 
 /**
@@ -77,7 +75,7 @@ interface SuspendableTask<I, O> : Task<I, O> {
 /**
  * This creates the actual `Task` instances that are run by the task master.
  */
-interface TaskFactory<T : Task<I, O>, I, O> {
+interface TaskFactory<I, O> {
     /**
      * Calculates the cost of the task operation based on the input.
      *
@@ -91,7 +89,7 @@ interface TaskFactory<T : Task<I, O>, I, O> {
     /**
      * Creates a new instance of the `Task`
      */
-    fun create(): T
+    fun create(input: I, handle: TaskHandle<I, O>): Task<I, O>
 }
 
 /**
@@ -117,7 +115,7 @@ interface TaskHandle<I, O> : EventEmitter {
     /**
      * The class of the task instance
      */
-    val type: Class<Task<I, O>>
+    val type: Class<out Task<I, O>>
 
     /**
      * The input that was provided to the task

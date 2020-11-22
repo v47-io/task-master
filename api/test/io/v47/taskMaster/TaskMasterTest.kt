@@ -31,16 +31,21 @@
  */
 package io.v47.taskMaster
 
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertDoesNotThrow
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TaskMasterTest {
-    /*@Test
+    @Test
     fun `it should create a TaskMaster instance`() {
         val taskMaster = assertDoesNotThrow {
-            TaskMaster()
+            TaskMaster {
+                totalBudget = 30.0
+            }
         }
 
         assertNotNull(taskMaster)
-    }*/
+    }
 }

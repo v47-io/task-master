@@ -29,21 +29,18 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.events
+package mocks
 
-import horus.events.EventKey
-import io.v47.taskMaster.TaskState
+import io.v47.taskMaster.TaskFactory
+import io.v47.taskMaster.TaskHandle
 
-sealed class TaskHandleEvent {
-    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
-        companion object : EventKey<StateChanged>
-    }
+class MockTaskFactory : TaskFactory<MockTaskInput, Unit> {
+    override fun calculateCost(input: MockTaskInput): Double =
+        input.cost
 
-    data class Completed(val output: Any) : TaskHandleEvent() {
-        companion object : EventKey<Completed>
-    }
-
-    data class Failed(val error: Throwable) : TaskHandleEvent() {
-        companion object : EventKey<Failed>
-    }
+    override fun create(input: MockTaskInput, handle: TaskHandle<MockTaskInput, Unit>) =
+        if (!input.suspendable)
+            MockTask(input)
+        else
+            MockSuspendableTask(input)
 }

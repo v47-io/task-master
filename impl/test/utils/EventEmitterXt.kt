@@ -29,21 +29,30 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.events
+package utils
 
+import horus.events.EventEmitter
 import horus.events.EventKey
-import io.v47.taskMaster.TaskState
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 
-sealed class TaskHandleEvent {
-    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
-        companion object : EventKey<StateChanged>
+@Suppress("DeferredIsResult")
+fun <T : Any> EventEmitter.deferredOnce(key: EventKey<T>): Deferred<T> {
+    val deferred = CompletableDeferred<T>()
+    once(key) {
+        deferred.complete(it)
     }
 
-    data class Completed(val output: Any) : TaskHandleEvent() {
-        companion object : EventKey<Completed>
+    return deferred
+}
+
+fun <T : Any> EventEmitter.record(vararg keys: EventKey<T>): List<T> {
+    val events = mutableListOf<T>()
+    keys.forEach { key ->
+        on(key) {
+            events.add(it)
+        }
     }
 
-    data class Failed(val error: Throwable) : TaskHandleEvent() {
-        companion object : EventKey<Failed>
-    }
+    return events
 }

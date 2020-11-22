@@ -5,7 +5,7 @@ ext {
     // Implementation libraries
     atomicFuVersion = '0.14.4'
     coroutinesVersion = '1.4.1'
-    horusEventsVersion = '2.0.0'
+    horusEventsVersion = '2.1.0'
     logbackVersion = '1.2.3'
 
     // Testing libraries
