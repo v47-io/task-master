@@ -195,6 +195,79 @@ class TaskHandleImplTest {
         A.assertEquals(TaskState.Killed, taskHandle.state)
     }
 
+    @Test
+    fun `it reruns a killed task`() = runBlocking {
+        taskHandle = createTaskHandle(MockTaskInput())
+
+        taskHandle.run()
+
+        delay(50)
+
+        A.assertEquals(TaskState.Running, taskHandle.state)
+
+        taskHandle.kill()
+
+        A.assertEquals(TaskState.Killed, taskHandle.state)
+
+        val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
+
+        taskHandle.run()
+        A.assertEquals(TaskState.Running, taskHandle.state)
+
+        completedEvent.await()
+
+        A.assertEquals(TaskState.Complete, taskHandle.state)
+    }
+
+    @Test
+    fun `it is prevented from running by the runCondition`() = runBlocking {
+        var doRun = false
+        taskHandle = createTaskHandle(MockTaskInput(runCondition = { doRun }))
+
+        taskHandle.run()
+
+        A.assertEquals(TaskState.Waiting, taskHandle.state)
+
+        doRun = true
+
+        val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
+
+        taskHandle.run()
+
+        A.assertEquals(TaskState.Running, taskHandle.state)
+
+        completedEvent.await()
+
+        A.assertEquals(TaskState.Complete, taskHandle.state)
+    }
+
+    @Test
+    fun `it shouldn't be broken by calling run multiple times`() = runBlocking {
+        taskHandle = createTaskHandle(MockTaskInput())
+        val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
+        val recordedEvents = taskHandle.record(TaskHandleEvent.StateChanged)
+
+        repeat(10) {
+            taskHandle.run()
+
+            delay(10)
+        }
+
+        A.assertEquals(TaskState.Running, taskHandle.state)
+
+        completedEvent.await()
+
+        A.assertEquals(TaskState.Complete, taskHandle.state)
+
+        A.assertEquals(
+            listOf(
+                TaskHandleEvent.StateChanged(TaskState.Running),
+                TaskHandleEvent.StateChanged(TaskState.Complete)
+            ),
+            recordedEvents
+        )
+    }
+
     private fun createTaskHandle(input: MockTaskInput): TaskHandleImpl<MockTaskInput, Unit> {
         val handle = TaskHandleImpl(
             factory,
