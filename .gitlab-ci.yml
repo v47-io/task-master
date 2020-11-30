@@ -1,11 +1,12 @@
 image: adoptopenjdk/openjdk11-openj9:alpine
 
 variables:
-  GRADLE_OPTS: "--no-daemon --console=plain"
+  GRADLE_CACHE: .cache/.gradle
+  GRADLE_CMD: ./gradlew --no-daemon --console=plain -g $GRADLE_CACHE
 
 cache:
   paths:
-    - .cache/.gradle
+    - $GRADLE_CACHE
 
 before_script:
   - chmod +x gradlew
@@ -18,13 +19,13 @@ stages:
 build:
   stage: build
   script:
-  - ./gradlew -g .cache/.gradle clean assemble
+  - $GRADLE_CMD clean assemble
   allow_failure: false
 
 test:
   stage: test
   script:
-    - ./gradlew -g .cache/.gradle test
+    - $GRADLE_CMD test
   allow_failure: false
   artifacts:
     when: on_failure
@@ -38,4 +39,4 @@ test:
 publish:
   stage: publish
   script:
-    - ./gradlew -g .cache/.gradle publish
+    - $GRADLE_CMD publish

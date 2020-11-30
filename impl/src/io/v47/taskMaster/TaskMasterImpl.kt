@@ -34,36 +34,114 @@ package io.v47.taskMaster
 import horus.events.DefaultEventEmitter
 import horus.events.EventEmitter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
 internal class TaskMasterImpl(
+    private val configuration: Configuration,
     override val coroutineContext: CoroutineContext
 ) : TaskMaster, CoroutineScope, EventEmitter by DefaultEventEmitter() {
-    override val taskHandles: Set<TaskHandle<*, *>>
-        get() = TODO("Not yet implemented")
+    private var running = true
+
+    private val taskHandlesMutex = Mutex()
+    override val taskHandles = mutableSetOf<TaskHandleImpl<*, *>>()
 
     override suspend fun <I, O> add(
         factory: TaskFactory<I, O>,
         input: I,
         priority: Int,
         runCondition: RunCondition?
-    ): TaskHandle<I, O> {
+    ): TaskHandle<I, O> = taskHandlesMutex.withLock {
+        require(running) { "This task master was stopped. Cannot add new tasks" }
+
+        @Suppress("UNCHECKED_CAST")
+        val existingTaskHandle = taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
+        if (existingTaskHandle != null) {
+            if (configuration.rescheduleOnAdd) {
+                existingTaskHandle.priority = priority
+                existingTaskHandle.runCondition = runCondition
+
+                scheduleTask(existingTaskHandle, forceRun = true)
+            }
+
+            existingTaskHandle
+        } else {
+            val cost = factory.calculateCost(input)
+            require(cost > 0.0) { "The calculated cost of a task must be greater than 0" }
+
+            val taskHandle = TaskHandleImpl(
+                factory,
+                this,
+                input,
+                priority,
+                runCondition,
+                cost
+            )
+
+            taskHandles.add(taskHandle)
+
+            scheduleTask(taskHandle, forceRun = false)
+
+            taskHandle
+        }
+    }
+
+    override suspend fun <I, O> suspend(taskHandle: TaskHandle<I, O>): Boolean = taskHandlesMutex.withLock {
+        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
+
+        val suspendResult = taskHandle.suspend()
+        handleSuspendResult(taskHandle, suspendResult, rescheduleTasks = true)
+
+        suspendResult == TaskHandleImpl.SuspendResult.Suspended
+    }
+
+    override suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>): Boolean = taskHandlesMutex.withLock {
+        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
+
+        val resumeResult = taskHandle.resume()
+        handleResumeResult(taskHandle, resumeResult)
+
+        resumeResult == TaskHandleImpl.ResumeResult.Resumed
+    }
+
+    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean) = taskHandlesMutex.withLock {
+        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
+
+        taskHandle.kill()
+
+        if (remove)
+            taskHandles.remove(taskHandle)
+    }
+
+    override suspend fun stop(killRunning: Boolean) = taskHandlesMutex.withLock {
+        running = false
+
+        if (killRunning)
+            taskHandles.forEach {
+                if (!it.isDone)
+                    it.kill()
+            }
+
+        taskHandles.clear()
+    }
+
+    private suspend fun scheduleTask(taskHandle: TaskHandleImpl<*, *>, forceRun: Boolean) {
         TODO("Not yet implemented")
     }
 
-    override suspend fun <I, O> suspend(taskHandle: TaskHandle<I, O>): Boolean {
+    private suspend fun handleSuspendResult(
+        taskHandle: TaskHandleImpl<*, *>,
+        suspendResult: TaskHandleImpl.SuspendResult,
+        rescheduleTasks: Boolean
+    ) {
         TODO("Not yet implemented")
     }
 
-    override suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>): Boolean {
-        TODO("Not yet implemented")
-    }
-
-    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>) {
-        TODO("Not yet implemented")
-    }
-
-    override suspend fun stop(killRunning: Boolean) {
+    private suspend fun handleResumeResult(
+        taskHandle: TaskHandleImpl<*, *>,
+        resumeResult: TaskHandleImpl.ResumeResult
+    ) {
         TODO("Not yet implemented")
     }
 }
