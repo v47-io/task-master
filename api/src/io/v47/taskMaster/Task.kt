@@ -73,7 +73,7 @@ interface SuspendableTask<I, O> : Task<I, O> {
 }
 
 /**
- * This creates the actual `Task` instances that are run by the task master.
+ * This creates the actual `Task` instances that are run by the task master
  */
 interface TaskFactory<I, O> {
     /**
@@ -111,11 +111,6 @@ interface TaskHandle<I, O> : EventEmitter {
      * The id that uniquely identifies the task in `the system`
      */
     val id: String
-
-    /**
-     * The class of the task instance
-     */
-    val type: Class<out Task<I, O>>
 
     /**
      * The input that was provided to the task

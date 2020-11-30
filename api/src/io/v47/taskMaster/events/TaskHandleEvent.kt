@@ -46,4 +46,6 @@ sealed class TaskHandleEvent {
     data class Failed(val error: Throwable) : TaskHandleEvent() {
         companion object : EventKey<Failed>
     }
+
+    object Killed : TaskHandleEvent(), EventKey<Killed>
 }

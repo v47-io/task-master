@@ -31,16 +31,22 @@
  */
 package mocks
 
+import horus.events.DefaultEventEmitter
 import io.v47.taskMaster.Task
 import kotlinx.coroutines.delay
 
-class MockTask(private val input: MockTaskInput) : Task<MockTaskInput, Unit> {
+class MockTask(private val input: MockTaskInput) : Task<MockTaskInput, Unit>, DefaultEventEmitter() {
     override suspend fun run() {
         if (input.failWhileRunning) {
             delay(input.duration / 2)
             throw IllegalArgumentException("This is a random failure")
-        } else
-            delay(input.duration)
+        } else {
+            delay(input.duration / 3)
+            emit(MockTaskEvent, MockTaskEvent("first event"))
+            delay(input.duration / 3)
+            emit(MockTaskEvent, MockTaskEvent("second event"))
+            delay(input.duration / 3)
+        }
     }
 
     override suspend fun clean() {

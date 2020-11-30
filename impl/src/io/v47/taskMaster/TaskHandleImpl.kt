@@ -31,31 +31,38 @@
  */
 package io.v47.taskMaster
 
-import horus.events.DefaultEventEmitter
-import horus.events.EventEmitter
 import io.v47.taskMaster.events.TaskHandleEvent
+import io.v47.taskMaster.events.TaskHandleEventEmitter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.time.Instant
 import java.util.*
 import java.util.concurrent.atomic.AtomicReference
+
+private val taskDoneStates = setOf(TaskState.Complete, TaskState.Failed, TaskState.Killed)
+private val taskRunnableStates = setOf(TaskState.Waiting, TaskState.Killed)
+
+internal val TaskHandleImpl<*, *>.isDone: Boolean
+    get() = state in taskDoneStates
+
+internal val TaskHandleImpl<*, *>.isRunnable: Boolean
+    get() = state in taskRunnableStates
 
 @Suppress("LongParameterList")
 internal class TaskHandleImpl<I, O>(
     private val factory: TaskFactory<I, O>,
     private val coroutineScope: CoroutineScope,
-    override val type: Class<out Task<I, O>>,
     override val input: I,
-    override val priority: Int,
-    override val runCondition: RunCondition?,
+    override var priority: Int,
+    override var runCondition: RunCondition?,
     val cost: Double
-) : TaskHandle<I, O>, EventEmitter by DefaultEventEmitter() {
+) : TaskHandle<I, O>, TaskHandleEventEmitter<I, O>() {
     override val id = UUID.randomUUID().toString()
 
-    override val suspendable by lazy {
-        SuspendableTask::class.java.isAssignableFrom(type)
-    }
+    override var suspendable = false
 
     private val _output = AtomicReference<O>(null)
 
@@ -78,29 +85,24 @@ internal class TaskHandleImpl<I, O>(
     override val state: TaskState
         get() = _state.get()
 
-    val isRunnable: Boolean
-        get() {
-            var result = false
-            _state.updateAndGet { state ->
-                result = state == TaskState.Waiting || state == TaskState.Killed
-                state
-            }
+    var lastActive: Instant? = null
+        private set
 
-            return result
-        }
-
-    private val taskLogger = LoggerFactory.getLogger(type)!!
+    private lateinit var taskLogger: Logger
 
     private val currentTaskMutex = Mutex()
-    private var currentTask: Task<I, O>? = null
     private var currentTaskJob: Job? = null
 
     suspend fun run() =
         currentTaskMutex.withLock {
             if (isRunnable && runCondition?.invoke() != false) {
                 val task = factory.create(input, this)
+                suspendable = task is SuspendableTask
+                taskLogger = LoggerFactory.getLogger(task::class.java)!!
 
                 taskLogger.trace("Created with input {}", input)
+
+                lastActive = Instant.now()
 
                 currentTask = task
                 setStateAndEmit(TaskState.Running)
@@ -156,9 +158,10 @@ internal class TaskHandleImpl<I, O>(
                     if (result)
                         setStateAndEmit(TaskState.Suspended)
 
-                    if (result)
+                    if (result) {
+                        lastActive = Instant.now()
                         SuspendResult.Suspended
-                    else
+                    } else
                         SuspendResult.NotSuspended
                 } catch (x: Throwable) {
                     taskLogger.warn("Failed to suspend with error", x)
@@ -177,9 +180,10 @@ internal class TaskHandleImpl<I, O>(
                     if (result)
                         setStateAndEmit(TaskState.Running)
 
-                    if (result)
+                    if (result) {
+                        lastActive = Instant.now()
                         ResumeResult.Resumed
-                    else
+                    } else
                         ResumeResult.NotResumed
                 } catch (x: Throwable) {
                     taskLogger.warn("Failed to resume task with error", x)
@@ -191,6 +195,9 @@ internal class TaskHandleImpl<I, O>(
 
     suspend fun kill() {
         currentTaskMutex.withLock {
+            if (state == TaskState.Killed)
+                return
+
             if (state == TaskState.Suspended) {
                 currentTaskJob?.let {
                     it.cancel("job killed")
@@ -208,7 +215,7 @@ internal class TaskHandleImpl<I, O>(
             _error.set(null)
             setStateAndEmit(TaskState.Killed)
 
-            clear()
+            emit(TaskHandleEvent.Killed, TaskHandleEvent.Killed)
 
             taskLogger.debug("Task killed")
         }
@@ -218,7 +225,7 @@ internal class TaskHandleImpl<I, O>(
         runCatching {
             task.clean()
         }.onFailure { cleanX ->
-            LoggerFactory.getLogger(type).debug("Clean-up failed with exception", cleanX)
+            taskLogger.debug("Clean-up failed with exception", cleanX)
         }
 
         currentTask = null
@@ -242,7 +249,6 @@ internal class TaskHandleImpl<I, O>(
     override fun toString(): String {
         return "TaskHandle(" +
                 "id='$id', " +
-                "type=${type.typeName}, " +
                 "input=$input, " +
                 "priority=$priority, " +
                 "runCondition=${runCondition?.let { "<set>" } ?: "<unset>"}, " +
@@ -252,6 +258,9 @@ internal class TaskHandleImpl<I, O>(
                 "suspendable=$suspendable" +
                 ")"
     }
+
+    fun <I> matches(factory: TaskFactory<*, *>, input: I) =
+        this.factory.javaClass == factory::class.java && this.input == input
 
     enum class SuspendResult {
         Suspended,

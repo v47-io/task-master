@@ -47,7 +47,7 @@ interface TaskMaster : EventEmitter {
             configuration: Configuration,
             coroutineContext: CoroutineContext = Dispatchers.Default
         ): TaskMaster {
-            val (totalBudget, reservedBudget, maximumDebt, _) = configuration
+            val (totalBudget, reservedBudget, maximumDebt, _, _) = configuration
 
             require(totalBudget > 0) { "No budget set. No tasks will run" }
             require(reservedBudget == null || (reservedBudget <= totalBudget && reservedBudget > -1)) {
@@ -88,8 +88,16 @@ interface TaskMaster : EventEmitter {
             }
     }
 
+    /**
+     * All currently known task handles for waiting, running, or killed tasks.
+     */
     val taskHandles: Set<TaskHandle<*, *>>
 
+    /**
+     * Adds a new task to be scheduled if none with the specified input already exists.
+     *
+     * If there is a task with that input it returns the existing task handle instead.
+     */
     suspend fun <I, O> add(
         factory: TaskFactory<I, O>,
         input: I,
@@ -101,7 +109,7 @@ interface TaskMaster : EventEmitter {
 
     suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>): Boolean
 
-    suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>)
+    suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false)
 
     suspend fun stop(killRunning: Boolean = false)
 }
@@ -110,12 +118,14 @@ data class Configuration(
     val totalBudget: Double,
     val reservedBudget: Double? = null,
     val maximumDebt: Double? = null,
+    val rescheduleOnAdd: Boolean = true,
     val restartKilledTasks: Boolean = false,
 ) {
     interface Builder {
         var totalBudget: Double
         var reservedBudget: Double?
         var maximumDebt: Double?
+        var rescheduleOnAdd: Boolean
         var restartKilledTasks: Boolean
         var coroutineContext: CoroutineContext
     }
@@ -131,6 +141,7 @@ private class ConfigurationBuilderImpl : Configuration.Builder {
 
     override var reservedBudget: Double? = null
     override var maximumDebt: Double? = null
+    override var rescheduleOnAdd: Boolean = true
     override var restartKilledTasks: Boolean = false
     override var coroutineContext: CoroutineContext = Dispatchers.Default
 
@@ -139,6 +150,7 @@ private class ConfigurationBuilderImpl : Configuration.Builder {
             totalBudget,
             reservedBudget,
             maximumDebt,
+            rescheduleOnAdd,
             restartKilledTasks
         )
 }

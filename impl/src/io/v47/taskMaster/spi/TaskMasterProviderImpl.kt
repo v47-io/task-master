@@ -40,13 +40,11 @@ import kotlin.coroutines.CoroutineContext
 
 class TaskMasterProviderImpl : TaskMasterProvider {
     override fun create(configuration: Configuration, coroutineContext: CoroutineContext): TaskMaster {
-        // TODO
-
         val actualCoroutineContext = if (coroutineContext[Job] == null)
             SupervisorJob() + coroutineContext
         else
             coroutineContext
 
-        return TaskMasterImpl(actualCoroutineContext)
+        return TaskMasterImpl(configuration, actualCoroutineContext)
     }
 }

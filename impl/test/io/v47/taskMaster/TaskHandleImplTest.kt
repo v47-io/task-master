@@ -32,29 +32,22 @@
 package io.v47.taskMaster
 
 import io.v47.taskMaster.events.TaskHandleEvent
-import kotlinx.coroutines.*
-import mocks.MockSuspendableTask
-import mocks.MockTask
-import mocks.MockTaskFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import mocks.MockTaskInput
+import mocks.createMockTaskHandle
 import org.junit.jupiter.api.*
 import utils.deferredOnce
 import utils.record
-import java.util.concurrent.Executors
 import org.junit.jupiter.api.Assertions as A
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TaskHandleImplTest {
-    private val factory = MockTaskFactory()
-    private val coroutineScope = object : CoroutineScope {
-        override val coroutineContext = Executors.newFixedThreadPool(3).asCoroutineDispatcher() + SupervisorJob()
-    }
-
     private lateinit var taskHandle: TaskHandleImpl<out Any, out Any>
 
     @Test
     fun `it runs`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput())
+        taskHandle = createMockTaskHandle(MockTaskInput())
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
 
         taskHandle.run()
@@ -76,7 +69,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it suspends and resumes`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput(suspendable = true))
+        taskHandle = createMockTaskHandle(MockTaskInput(suspendable = true))
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
         val recordedEvents = taskHandle.record(TaskHandleEvent.StateChanged)
 
@@ -108,7 +101,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it fails to run`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput(failWhileRunning = true))
+        taskHandle = createMockTaskHandle(MockTaskInput(failWhileRunning = true))
         val failedEvent = taskHandle.deferredOnce(TaskHandleEvent.Failed)
         val recordedEvents = taskHandle.record(TaskHandleEvent.StateChanged)
 
@@ -140,7 +133,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it fails to cleanup after failing`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput(failWhileRunning = true, failDuringCleanUp = true))
+        taskHandle = createMockTaskHandle(MockTaskInput(failWhileRunning = true, failDuringCleanUp = true))
         val failedEvent = taskHandle.deferredOnce(TaskHandleEvent.Failed)
 
         taskHandle.run()
@@ -152,7 +145,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it fails to suspend`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput(suspendable = true, setSuspended = true, failToSuspend = true))
+        taskHandle = createMockTaskHandle(MockTaskInput(suspendable = true, setSuspended = true, failToSuspend = true))
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
         val recordedEvents = taskHandle.record(TaskHandleEvent.StateChanged)
 
@@ -178,7 +171,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it fails to resume`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput(suspendable = true, setSuspended = true, failToResume = true))
+        taskHandle = createMockTaskHandle(MockTaskInput(suspendable = true, setSuspended = true, failToResume = true))
 
         taskHandle.run()
 
@@ -197,7 +190,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it reruns a killed task`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput())
+        taskHandle = createMockTaskHandle(MockTaskInput())
 
         taskHandle.run()
 
@@ -222,18 +215,16 @@ class TaskHandleImplTest {
     @Test
     fun `it is prevented from running by the runCondition`() = runBlocking {
         var doRun = false
-        taskHandle = createTaskHandle(MockTaskInput(runCondition = { doRun }))
+        taskHandle = createMockTaskHandle(MockTaskInput(runCondition = { doRun }))
 
-        taskHandle.run()
-
+        A.assertFalse(taskHandle.run())
         A.assertEquals(TaskState.Waiting, taskHandle.state)
 
         doRun = true
 
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
 
-        taskHandle.run()
-
+        A.assertTrue(taskHandle.run())
         A.assertEquals(TaskState.Running, taskHandle.state)
 
         completedEvent.await()
@@ -243,7 +234,7 @@ class TaskHandleImplTest {
 
     @Test
     fun `it shouldn't be broken by calling run multiple times`() = runBlocking {
-        taskHandle = createTaskHandle(MockTaskInput())
+        taskHandle = createMockTaskHandle(MockTaskInput())
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
         val recordedEvents = taskHandle.record(TaskHandleEvent.StateChanged)
 
@@ -266,25 +257,6 @@ class TaskHandleImplTest {
             ),
             recordedEvents
         )
-    }
-
-    private fun createTaskHandle(input: MockTaskInput): TaskHandleImpl<MockTaskInput, Unit> {
-        val handle = TaskHandleImpl(
-            factory,
-            coroutineScope,
-            if (!input.suspendable)
-                MockTask::class.java
-            else
-                MockSuspendableTask::class.java,
-            input,
-            0,
-            input.runCondition,
-            input.cost
-        )
-
-        println("Testing with handle $handle")
-
-        return handle
     }
 
     @AfterEach
