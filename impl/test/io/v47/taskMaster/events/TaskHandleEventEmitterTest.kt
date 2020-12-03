@@ -33,14 +33,14 @@ package io.v47.taskMaster.events
 
 import io.v47.taskMaster.Task
 import kotlinx.coroutines.runBlocking
-import mocks.MockTask
-import mocks.MockTaskEvent
-import mocks.MockTaskInput
+import testsupport.mocks.MockTask
+import testsupport.mocks.MockTaskEvent
+import testsupport.mocks.MockTaskInput
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import utils.deferredOnce
-import utils.record
+import testsupport.utils.deferredOnce
+import testsupport.utils.record
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TaskHandleEventEmitterTest {

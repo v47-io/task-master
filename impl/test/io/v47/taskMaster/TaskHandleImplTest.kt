@@ -34,11 +34,11 @@ package io.v47.taskMaster
 import io.v47.taskMaster.events.TaskHandleEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import mocks.MockTaskInput
+import testsupport.mocks.MockTaskInput
 import mocks.createMockTaskHandle
 import org.junit.jupiter.api.*
-import utils.deferredOnce
-import utils.record
+import testsupport.utils.deferredOnce
+import testsupport.utils.record
 import org.junit.jupiter.api.Assertions as A
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

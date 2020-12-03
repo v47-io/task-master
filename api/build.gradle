@@ -6,5 +6,6 @@ dependencies {
     compileOnly libraries.coroutines
 
     testImplementation libraries.coroutines
+    testImplementation project(':test-support')
     testRuntimeOnly project(':impl')
 }

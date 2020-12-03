@@ -29,30 +29,18 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package utils
+package testsupport.mocks
 
-import horus.events.EventEmitter
-import horus.events.EventKey
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Deferred
+import io.v47.taskMaster.TaskFactory
+import io.v47.taskMaster.TaskHandle
 
-@Suppress("DeferredIsResult")
-fun <T : Any> EventEmitter.deferredOnce(key: EventKey<T>): Deferred<T> {
-    val deferred = CompletableDeferred<T>()
-    once(key) {
-        deferred.complete(it)
-    }
+class MockTaskFactory : TaskFactory<MockTaskInput, Unit> {
+    override fun calculateCost(input: MockTaskInput): Double =
+        input.cost
 
-    return deferred
-}
-
-fun <T : Any> EventEmitter.record(vararg keys: EventKey<T>): List<T> {
-    val events = mutableListOf<T>()
-    keys.forEach { key ->
-        on(key) {
-            events.add(it)
-        }
-    }
-
-    return events
+    override fun create(input: MockTaskInput, handle: TaskHandle<MockTaskInput, Unit>) =
+        if (!input.suspendable)
+            MockTask(input)
+        else
+            MockSuspendableTask(input)
 }

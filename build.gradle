@@ -205,12 +205,14 @@ task test(group: 'verification') {
 task jacocoRootReport(type: JacocoReport, group: 'verification') {
     description = 'Generates an aggregate report from all subprojects'
 
-    dependsOn(subprojects.test)
+    def selectedProjects = subprojects.findAll { !it.name.contains('test-support') }
 
-    additionalSourceDirs.from files(subprojects.sourceSets.main.allSource.srcDirs)
-    sourceDirectories.from files(subprojects.sourceSets.main.allSource.srcDirs)
-    classDirectories.from files(subprojects.sourceSets.main.output)
-    executionData.from files(subprojects.jacocoTestReport.executionData)
+    dependsOn(selectedProjects.test)
+
+    additionalSourceDirs.from files(selectedProjects.sourceSets.main.allSource.srcDirs)
+    sourceDirectories.from files(selectedProjects.sourceSets.main.allSource.srcDirs)
+    classDirectories.from files(selectedProjects.sourceSets.main.output)
+    executionData.from files(selectedProjects.jacocoTestReport.executionData)
 
     doFirst {
         executionData.from files(executionData.findAll { it.exists() })
@@ -223,7 +225,7 @@ task jacocoRootReport(type: JacocoReport, group: 'verification') {
 }
 
 task copyJacocoRootReport(type: Copy) {
-    from (jacocoRootReport) {
+    from(jacocoRootReport) {
         include "jacocoRootReport.xml"
     }
 

@@ -29,54 +29,30 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package mocks
+package testsupport.utils
 
-import io.v47.taskMaster.SuspendableTask
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.yield
-import java.util.concurrent.atomic.AtomicBoolean
+import horus.events.EventEmitter
+import horus.events.EventKey
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 
-class MockSuspendableTask(private val input: MockTaskInput) : SuspendableTask<MockTaskInput, Unit> {
-    private var suspended = AtomicBoolean(false)
+@Suppress("DeferredIsResult")
+fun <T : Any> EventEmitter.deferredOnce(key: EventKey<T>): Deferred<T> {
+    val deferred = CompletableDeferred<T>()
+    once(key) {
+        deferred.complete(it)
+    }
 
-    override suspend fun run() {
-        var msRun = 0L
-        while (true) {
-            if (suspended.get())
-                yield()
-            else if (msRun < input.duration / 10) {
-                if (input.failWhileRunning)
-                    throw IllegalArgumentException("This is a random failure")
+    return deferred
+}
 
-                delay(1)
-                msRun++
-            } else
-                break
+fun <T : Any> EventEmitter.record(vararg keys: EventKey<T>): List<T> {
+    val events = mutableListOf<T>()
+    keys.forEach { key ->
+        on(key) {
+            events.add(it)
         }
     }
 
-    override suspend fun suspend() =
-        if (input.setSuspended) {
-            if (input.failToSuspend)
-                throw IllegalArgumentException("Failed to suspend")
-
-            suspended.set(true)
-            true
-        } else
-            false
-
-    override suspend fun resume() =
-        if (input.setSuspended) {
-            if (input.failToResume)
-                throw IllegalArgumentException("Failed to resume")
-
-            suspended.set(false)
-            true
-        } else
-            false
-
-    override suspend fun clean() {
-        if (input.failDuringCleanUp)
-            throw IllegalArgumentException("Failed to clean")
-    }
+    return events
 }

@@ -6,4 +6,4 @@ pluginManagement {
 
 rootProject.name = 'task-master'
 
-include 'api', 'impl'
+include 'api', 'test-support', 'impl'

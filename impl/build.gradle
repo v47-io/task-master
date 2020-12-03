@@ -3,4 +3,6 @@ apply from: '../config/gradle/library.gradle'
 dependencies {
     implementation project(':api')
     implementation libraries.coroutines
+
+    testImplementation project(':test-support')
 }

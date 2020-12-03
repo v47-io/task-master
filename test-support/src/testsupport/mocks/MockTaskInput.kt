@@ -29,18 +29,18 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package mocks
+package testsupport.mocks
 
-import io.v47.taskMaster.TaskFactory
-import io.v47.taskMaster.TaskHandle
+import io.v47.taskMaster.RunCondition
 
-class MockTaskFactory : TaskFactory<MockTaskInput, Unit> {
-    override fun calculateCost(input: MockTaskInput): Double =
-        input.cost
-
-    override fun create(input: MockTaskInput, handle: TaskHandle<MockTaskInput, Unit>) =
-        if (!input.suspendable)
-            MockTask(input)
-        else
-            MockSuspendableTask(input)
-}
+data class MockTaskInput(
+    val cost: Double = 0.0,
+    val duration: Long = 1000,
+    val failWhileRunning: Boolean = false,
+    val failDuringCleanUp: Boolean = false,
+    val suspendable: Boolean = false,
+    val setSuspended: Boolean = true,
+    val failToSuspend: Boolean = false,
+    val failToResume: Boolean = false,
+    val runCondition: RunCondition? = null
+)

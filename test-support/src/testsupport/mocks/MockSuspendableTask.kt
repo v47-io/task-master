@@ -29,18 +29,54 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package mocks
+package testsupport.mocks
 
-import io.v47.taskMaster.RunCondition
+import io.v47.taskMaster.SuspendableTask
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
+import java.util.concurrent.atomic.AtomicBoolean
 
-data class MockTaskInput(
-    val cost: Double = 0.0,
-    val duration: Long = 1000,
-    val failWhileRunning: Boolean = false,
-    val failDuringCleanUp: Boolean = false,
-    val suspendable: Boolean = false,
-    val setSuspended: Boolean = true,
-    val failToSuspend: Boolean = false,
-    val failToResume: Boolean = false,
-    val runCondition: RunCondition? = null
-)
+class MockSuspendableTask(private val input: MockTaskInput) : SuspendableTask<MockTaskInput, Unit> {
+    private var suspended = AtomicBoolean(false)
+
+    override suspend fun run() {
+        var msRun = 0L
+        while (true) {
+            if (suspended.get())
+                yield()
+            else if (msRun < input.duration / 10) {
+                if (input.failWhileRunning)
+                    throw IllegalArgumentException("This is a random failure")
+
+                delay(1)
+                msRun++
+            } else
+                break
+        }
+    }
+
+    override suspend fun suspend() =
+        if (input.setSuspended) {
+            if (input.failToSuspend)
+                throw IllegalArgumentException("Failed to suspend")
+
+            suspended.set(true)
+            true
+        } else
+            false
+
+    override suspend fun resume() =
+        if (input.setSuspended) {
+            if (input.failToResume)
+                throw IllegalArgumentException("Failed to resume")
+
+            suspended.set(false)
+            true
+        } else
+            false
+
+    override suspend fun clean() {
+        if (input.failDuringCleanUp)
+            throw IllegalArgumentException("Failed to clean")
+    }
+}

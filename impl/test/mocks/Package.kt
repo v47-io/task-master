@@ -35,6 +35,8 @@ import io.v47.taskMaster.TaskHandleImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import testsupport.mocks.MockTaskFactory
+import testsupport.mocks.MockTaskInput
 import java.util.concurrent.Executors
 
 val mockFactory = MockTaskFactory()
