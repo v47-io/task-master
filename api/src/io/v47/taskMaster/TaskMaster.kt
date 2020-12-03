@@ -43,16 +43,21 @@ interface TaskMaster : EventEmitter {
     companion object {
         private val providers = ServiceLoader.load(TaskMasterProvider::class.java)
 
+        /**
+         * Creates a new `TaskMaster` instance using the provided implementation
+         *
+         * @param[configuration] The configuration for the task master
+         * @param[coroutineContext] The coroutine context to use when running tasks
+         *
+         * @see Configuration.Builder.coroutineContext
+         */
         operator fun invoke(
             configuration: Configuration,
             coroutineContext: CoroutineContext = Dispatchers.Default
         ): TaskMaster {
-            val (totalBudget, reservedBudget, maximumDebt, _, _) = configuration
+            val (totalBudget, maximumDebt, _, _) = configuration
 
             require(totalBudget > 0) { "No budget set. No tasks will run" }
-            require(reservedBudget == null || (reservedBudget <= totalBudget && reservedBudget > -1)) {
-                "Reserved budget must be in the range 0..totalBudget"
-            }
             require(maximumDebt == null || maximumDebt >= 0) { "Maximum debt must be null or not negative" }
 
             val provider = providers.findFirst().orElse(null)
@@ -61,13 +66,6 @@ interface TaskMaster : EventEmitter {
             val log: Logger = LoggerFactory.getLogger(TaskMaster::class.java)
 
             log.info("Creating TaskMaster using provider '{}'", provider::class.qualifiedName)
-
-            @Suppress("MagicNumber")
-            if ((reservedBudget ?: 0.0) / totalBudget > 0.667)
-                log.warn(
-                    "Reserved budget is more than two thirds of defined total budget. " +
-                            "This may impact task execution performance."
-                )
 
             if (maximumDebt == 0.0)
                 log.warn("Maximum debt is 0. Tasks will always be killed instead of being suspended if possible")
@@ -81,6 +79,14 @@ interface TaskMaster : EventEmitter {
             )
         }
 
+        /**
+         * Creates a new `TaskMaster` instance using the provided implementation.
+         *
+         * This function configures the task master using the DSL provided by
+         * [Configuration.Builder]
+         *
+         * @param[configurationBlock] The code that configures the task master instance
+         */
         operator fun invoke(configurationBlock: Configuration.Builder.() -> Unit) =
             ConfigurationBuilderImpl().let { builder ->
                 builder.configurationBlock()
@@ -97,6 +103,19 @@ interface TaskMaster : EventEmitter {
      * Adds a new task to be scheduled if none with the specified input already exists.
      *
      * If there is a task with that input it returns the existing task handle instead.
+     *
+     * If this function is called repeatedly with the same input, the task master may
+     * try to schedule the existing task for immediate execution. Other tasks may be
+     * suspended or killed as a consequence.
+     *
+     * @param[factory] The task factory that will create the actual task that will be executed
+     * @param[input] The input for the task
+     * @param[priority] The priority of the task.
+     *                  This is reset on repeated calls to this function
+     * @param[runCondition] The condition that decides whether the task will run.
+     *                      This is reset on repeated calls to this function
+     *
+     * @return A task handle for the new task or an existing one
      */
     suspend fun <I, O> add(
         factory: TaskFactory<I, O>,
@@ -105,28 +124,134 @@ interface TaskMaster : EventEmitter {
         runCondition: RunCondition? = null
     ): TaskHandle<I, O>
 
-    suspend fun <I, O> suspend(taskHandle: TaskHandle<I, O>): Boolean
+    suspend fun <I, O> suspend(
+        taskHandle: TaskHandle<I, O>,
+        force: Boolean = false,
+        consumeFreedBudget: Boolean = true
+    ): Boolean
 
-    suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>): Boolean
+    suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>, force: Boolean = false): Boolean
 
     suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false)
-
-    suspend fun stop(killRunning: Boolean = false)
 }
 
 data class Configuration(
+    /**
+     * The maximum cost of tasks that can be executed concurrently
+     */
     val totalBudget: Double,
-    val reservedBudget: Double? = null,
+    /**
+     * The maximum cost of tasks that can be suspended at the
+     * same time.
+     *
+     * Tasks will not be suspended if this is `null`
+     */
     val maximumDebt: Double? = null,
+    /**
+     * Indicates whether tasks should be rescheduled for immediate
+     * execution if added repeatedly
+     */
     val rescheduleOnAdd: Boolean = true,
-    val restartKilledTasks: Boolean = false,
+    /**
+     * Indicates whether running tasks should be killed if budget
+     * is required to schedule new tasks
+     */
+    val killRunningTasks: Boolean = true,
+    /**
+     * Indicates whether suspended tasks should be killed to decrease
+     * the current debt when trying to suspend other tasks.
+     *
+     * This has no effect if no [maximumDebt] is configured
+     */
+    val killSuspended: Boolean = true,
+    /**
+     * Indicates whether to kill a task if its suspension failed.
+     *
+     * This has no effect if no [maximumDebt] is configured
+     */
+    val killIfSuspendFails: Boolean = false,
+    /**
+     * Indicates whether to kill a task if its resumption failed.
+     *
+     * This has no effect if no [maximumDebt] is configured
+     */
+    val killIfResumeFails: Boolean = true,
+    /**
+     * Indicates whether to reschedule previously killed tasks when
+     * budget becomes available.
+     *
+     * Tasks are immediately discarded if this is `false`
+     */
+    val rescheduleKilledTasks: Boolean = false,
 ) {
+    /**
+     * The interface that provides to configuration properties when
+     * creating a task master using the DSL style
+     */
     interface Builder {
+        /**
+         * The maximum cost of tasks that can be executed concurrently.
+         *
+         * This is the only required configuration property
+         */
         var totalBudget: Double
-        var reservedBudget: Double?
+
+        /**
+         * The maximum cost of tasks that can be suspended at the
+         * same time.
+         *
+         * Tasks will not be suspended if this is `null`
+         */
         var maximumDebt: Double?
+
+        /**
+         * Indicates whether tasks should be rescheduled for immediate
+         * execution if added repeatedly
+         */
         var rescheduleOnAdd: Boolean
-        var restartKilledTasks: Boolean
+
+        /**
+         * Indicates whether running tasks should be killed if budget
+         * is required to schedule new tasks
+         */
+        var killRunningTasks: Boolean
+
+        /**
+         * Indicates whether suspended tasks should be killed to decrease
+         * the current debt when trying to suspend other tasks.
+         *
+         * This has no effect if no [maximumDebt] is configured
+         */
+        var killSuspended: Boolean
+
+        /**
+         * Indicates whether to kill a task if its suspension failed.
+         *
+         * This has no effect if no [maximumDebt] is configured
+         */
+        var killIfSuspendFails: Boolean
+
+        /**
+         * Indicates whether to kill a task if its resumption failed.
+         *
+         * This has no effect if no [maximumDebt] is configured
+         */
+        var killIfResumeFails: Boolean
+
+        /**
+         * Indicates whether to reschedule previously killed tasks when
+         * budget becomes available.
+         *
+         * Tasks are immediately discarded when killed if this is `false`
+         */
+        var rescheduleKilledTasks: Boolean
+
+        /**
+         * The coroutine context to use when running tasks.
+         *
+         * If the context doesn't contain a [kotlinx.coroutines.SupervisorJob] a
+         * new context based on this one may be created
+         */
         var coroutineContext: CoroutineContext
     }
 }
@@ -139,18 +264,23 @@ private class ConfigurationBuilderImpl : Configuration.Builder {
             _totalBudget = value
         }
 
-    override var reservedBudget: Double? = null
     override var maximumDebt: Double? = null
     override var rescheduleOnAdd: Boolean = true
-    override var restartKilledTasks: Boolean = false
+    override var killRunningTasks: Boolean = true
+    override var killSuspended: Boolean = true
+    override var killIfSuspendFails: Boolean = false
+    override var killIfResumeFails: Boolean = true
+    override var rescheduleKilledTasks: Boolean = false
     override var coroutineContext: CoroutineContext = Dispatchers.Default
 
     fun build() =
         Configuration(
             totalBudget,
-            reservedBudget,
             maximumDebt,
             rescheduleOnAdd,
-            restartKilledTasks
+            killRunningTasks,
+            killSuspended,
+            killIfSuspendFails,
+            rescheduleKilledTasks
         )
 }

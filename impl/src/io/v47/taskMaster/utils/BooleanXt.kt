@@ -29,23 +29,14 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.spi
+package io.v47.taskMaster.utils
 
-import io.v47.taskMaster.Configuration
-import io.v47.taskMaster.TaskMaster
-import io.v47.taskMaster.TaskMasterImpl
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlin.coroutines.CoroutineContext
-
-@PublishedApi
-internal class TaskMasterProviderImpl : TaskMasterProvider {
-    override fun create(configuration: Configuration, coroutineContext: CoroutineContext): TaskMaster {
-        val actualCoroutineContext = if (coroutineContext[Job] == null)
-            SupervisorJob() + coroutineContext
-        else
-            coroutineContext
-
-        return TaskMasterImpl(configuration, actualCoroutineContext)
+/**
+ * Runs the specified `block` if the `this` value is `true`
+ * and returns `this` value.
+ */
+inline fun Boolean.ifTrue(block: () -> Unit) =
+    also {
+        if (it)
+            block()
     }
-}

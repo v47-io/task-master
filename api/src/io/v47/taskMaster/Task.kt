@@ -73,7 +73,10 @@ interface SuspendableTask<I, O> : Task<I, O> {
 }
 
 /**
- * This creates the actual `Task` instances that are run by the task master
+ * This creates the actual `Task` instances that are run by the task master.
+ *
+ * It should be stateless because a task master may only consider the
+ * factory's class when checking for existing tasks
  */
 interface TaskFactory<I, O> {
     /**

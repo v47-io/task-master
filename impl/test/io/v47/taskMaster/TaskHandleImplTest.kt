@@ -77,12 +77,12 @@ class TaskHandleImplTest {
 
         delay(50)
 
-        A.assertEquals(TaskHandleImpl.SuspendResult.Suspended, taskHandle.suspend())
+        A.assertEquals(Result.success(true), taskHandle.suspend())
         A.assertEquals(TaskState.Suspended, taskHandle.state)
 
         delay(50)
 
-        A.assertEquals(TaskHandleImpl.ResumeResult.Resumed, taskHandle.resume())
+        A.assertEquals(Result.success(true), taskHandle.resume())
         A.assertEquals(TaskState.Running, taskHandle.state)
 
         completedEvent.await()
@@ -90,10 +90,10 @@ class TaskHandleImplTest {
         A.assertEquals(TaskState.Complete, taskHandle.state)
         A.assertEquals(
             listOf(
-                TaskHandleEvent.StateChanged(TaskState.Running),
-                TaskHandleEvent.StateChanged(TaskState.Suspended),
-                TaskHandleEvent.StateChanged(TaskState.Running),
-                TaskHandleEvent.StateChanged(TaskState.Complete)
+                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Waiting, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Suspended, TaskState.Running, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Suspended, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Complete, TaskState.Running, taskHandle)
             ),
             recordedEvents
         )
@@ -124,8 +124,8 @@ class TaskHandleImplTest {
 
         A.assertEquals(
             listOf(
-                TaskHandleEvent.StateChanged(TaskState.Running),
-                TaskHandleEvent.StateChanged(TaskState.Failed)
+                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Waiting, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Failed, TaskState.Running, taskHandle)
             ),
             recordedEvents
         )
@@ -153,7 +153,7 @@ class TaskHandleImplTest {
 
         delay(50)
 
-        A.assertEquals(TaskHandleImpl.SuspendResult.Failed, taskHandle.suspend())
+        A.assertTrue(taskHandle.suspend().isFailure)
         A.assertEquals(TaskState.Running, taskHandle.state)
 
         completedEvent.await()
@@ -162,8 +162,8 @@ class TaskHandleImplTest {
 
         A.assertEquals(
             listOf(
-                TaskHandleEvent.StateChanged(TaskState.Running),
-                TaskHandleEvent.StateChanged(TaskState.Complete)
+                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Waiting, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Complete, TaskState.Running, taskHandle)
             ),
             recordedEvents
         )
@@ -177,10 +177,10 @@ class TaskHandleImplTest {
 
         delay(50)
 
-        A.assertEquals(TaskHandleImpl.SuspendResult.Suspended, taskHandle.suspend())
+        A.assertEquals(Result.success(true), taskHandle.suspend())
         A.assertEquals(TaskState.Suspended, taskHandle.state)
 
-        A.assertEquals(TaskHandleImpl.ResumeResult.Failed, taskHandle.resume())
+        A.assertTrue(taskHandle.resume().isFailure)
         A.assertEquals(TaskState.Suspended, taskHandle.state)
 
         taskHandle.kill()
@@ -213,26 +213,6 @@ class TaskHandleImplTest {
     }
 
     @Test
-    fun `it is prevented from running by the runCondition`() = runBlocking {
-        var doRun = false
-        taskHandle = createMockTaskHandle(MockTaskInput(runCondition = { doRun }))
-
-        A.assertFalse(taskHandle.run())
-        A.assertEquals(TaskState.Waiting, taskHandle.state)
-
-        doRun = true
-
-        val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
-
-        A.assertTrue(taskHandle.run())
-        A.assertEquals(TaskState.Running, taskHandle.state)
-
-        completedEvent.await()
-
-        A.assertEquals(TaskState.Complete, taskHandle.state)
-    }
-
-    @Test
     fun `it shouldn't be broken by calling run multiple times`() = runBlocking {
         taskHandle = createMockTaskHandle(MockTaskInput())
         val completedEvent = taskHandle.deferredOnce(TaskHandleEvent.Completed)
@@ -252,8 +232,8 @@ class TaskHandleImplTest {
 
         A.assertEquals(
             listOf(
-                TaskHandleEvent.StateChanged(TaskState.Running),
-                TaskHandleEvent.StateChanged(TaskState.Complete)
+                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Waiting, taskHandle),
+                TaskHandleEvent.StateChanged(TaskState.Complete, TaskState.Running, taskHandle)
             ),
             recordedEvents
         )

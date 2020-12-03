@@ -33,19 +33,74 @@ package io.v47.taskMaster
 
 import horus.events.DefaultEventEmitter
 import horus.events.EventEmitter
+import horus.events.EventKey
+import io.v47.taskMaster.TaskState.*
+import io.v47.taskMaster.events.TaskHandleEvent
+import io.v47.taskMaster.events.TaskMasterEvent
+import io.v47.taskMaster.exceptions.ResumeFailedException
+import io.v47.taskMaster.exceptions.SuspendFailedException
+import io.v47.taskMaster.utils.createTaskHandleTreeSet
+import io.v47.taskMaster.utils.ifTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.receiveOrNull
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
+private val taskScheduleableStates = setOf(Waiting, Suspended, Killed)
+
+@Suppress("TooManyFunctions")
 internal class TaskMasterImpl(
     private val configuration: Configuration,
     override val coroutineContext: CoroutineContext
 ) : TaskMaster, CoroutineScope, EventEmitter by DefaultEventEmitter() {
     private var running = true
 
+    override val taskHandles: Set<TaskHandle<*, *>>
+        get() = runBlocking {
+            taskHandlesMutex.withLock {
+                _taskHandles.toSet()
+            }
+        }
+
+    //region taskHandlesMutex scope
     private val taskHandlesMutex = Mutex()
-    override val taskHandles = mutableSetOf<TaskHandleImpl<*, *>>()
+    private val _taskHandles = createTaskHandleTreeSet()
+    private var taskHandlesSequence = 0L
+
+    private val runningTaskHandles = createTaskHandleTreeSet()
+    private val suspendedTaskHandles = createTaskHandleTreeSet()
+
+    private val consumedBudget: Double
+        get() = runningTaskHandles.sumOf { it.cost }
+
+    private val availableBudget: Double
+        get() = configuration.totalBudget - consumedBudget
+
+    private val currentDebt: Double
+        get() = suspendedTaskHandles.sumOf { it.cost }
+    //endregion
+
+    private val eventChannel: Channel<Pair<EventKey<TaskMasterEvent>, TaskMasterEvent>> =
+        Channel(
+            Channel.BUFFERED,
+            BufferOverflow.DROP_OLDEST
+        )
+
+    init {
+        launch {
+            while (isActive) {
+                @Suppress("EXPERIMENTAL_API_USAGE")
+                val event = eventChannel.receiveOrNull() ?: break
+                emit(event.first, event.second)
+            }
+        }
+    }
 
     override suspend fun <I, O> add(
         factory: TaskFactory<I, O>,
@@ -56,19 +111,20 @@ internal class TaskMasterImpl(
         require(running) { "This task master was stopped. Cannot add new tasks" }
 
         @Suppress("UNCHECKED_CAST")
-        val existingTaskHandle = taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
+        val existingTaskHandle = _taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
         if (existingTaskHandle != null) {
             if (configuration.rescheduleOnAdd) {
                 existingTaskHandle.priority = priority
                 existingTaskHandle.runCondition = runCondition
 
-                scheduleTask(existingTaskHandle, forceRun = true)
+                scheduleTask(existingTaskHandle, force = true)
             }
 
             existingTaskHandle
         } else {
             val cost = factory.calculateCost(input)
             require(cost > 0.0) { "The calculated cost of a task must be greater than 0" }
+            require(cost <= configuration.totalBudget) { "The cost of this task exceeds the total budget" }
 
             val taskHandle = TaskHandleImpl(
                 factory,
@@ -76,72 +132,283 @@ internal class TaskMasterImpl(
                 input,
                 priority,
                 runCondition,
-                cost
+                cost,
+                taskHandlesSequence++
             )
 
-            taskHandles.add(taskHandle)
+            _taskHandles.add(taskHandle)
+            eventChannel.send(TaskMasterEvent.TaskAdded to TaskMasterEvent.TaskAdded(taskHandle))
 
-            scheduleTask(taskHandle, forceRun = false)
+            addTaskHandleEventListeners(taskHandle)
+            scheduleTask(taskHandle, force = false)
 
             taskHandle
         }
     }
 
-    override suspend fun <I, O> suspend(taskHandle: TaskHandle<I, O>): Boolean = taskHandlesMutex.withLock {
-        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
+    override suspend fun <I, O> suspend(
+        taskHandle: TaskHandle<I, O>,
+        force: Boolean,
+        consumeFreedBudget: Boolean
+    ): Boolean =
+        configuration.maximumDebt?.let { maximumDebt ->
+            taskHandlesMutex.withLock {
+                require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
 
-        val suspendResult = taskHandle.suspend()
-        handleSuspendResult(taskHandle, suspendResult, rescheduleTasks = true)
+                val desiredDebt = maximumDebt - taskHandle.cost
 
-        suspendResult == TaskHandleImpl.SuspendResult.Suspended
+                @Suppress("ComplexCondition")
+                if (
+                    taskHandle in runningTaskHandles && taskHandle.state == Running &&
+                    (force || currentDebt <= desiredDebt)
+                ) {
+                    if (force)
+                        killSuspendedUntil(desiredDebt = desiredDebt)
+
+                    if (currentDebt <= desiredDebt)
+                        taskHandle.suspend()
+                            .getOrElse { throw SuspendFailedException(taskHandle, it) }
+                            .ifTrue {
+                                runningTaskHandles.remove(taskHandle)
+
+                                if (consumeFreedBudget)
+                                    consumeRemainingBudget()
+
+                                // IMPORTANT: THIS MUST COME AFTER consumeRemainingBudget
+                                // Otherwise this suspended task might get resumed right away
+                                suspendedTaskHandles.add(taskHandle)
+                            }
+                    else
+                        false
+                } else
+                    false
+            }
+        } ?: false
+
+    override suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>, force: Boolean): Boolean =
+        taskHandlesMutex.withLock {
+            require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
+
+            @Suppress("ComplexCondition")
+            if (
+                taskHandle in suspendedTaskHandles && taskHandle.state == Suspended &&
+                (force || availableBudget >= taskHandle.cost)
+            ) {
+                if (force) {
+                    trySuspendingRunningTasksUntil(taskHandle.cost)
+                    killRunningTasksUntil(taskHandle.cost)
+                }
+
+                if (availableBudget >= taskHandle.cost)
+                    taskHandle.resume()
+                        .getOrElse { throw ResumeFailedException(taskHandle, it) }
+                        .ifTrue {
+                            suspendedTaskHandles.remove(taskHandle)
+                            runningTaskHandles.add(taskHandle)
+                        }
+                else
+                    false
+            } else
+                false
+        }
+
+    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean) =
+        taskHandlesMutex.withLock {
+            require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
+
+            doKillTaskHandle(taskHandle, remove)
+        }
+
+    private fun addTaskHandleEventListeners(taskHandle: TaskHandleImpl<*, *>) {
+        taskHandle.on(TaskHandleEvent.StateChanged, this::taskHandleOnStateChanged)
+        taskHandle.on(TaskHandleEvent.Failed, this::taskHandleOnFailed)
+        taskHandle.on(TaskHandleEvent.Completed, this::taskHandleOnCompleted)
     }
 
-    override suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>): Boolean = taskHandlesMutex.withLock {
-        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
-
-        val resumeResult = taskHandle.resume()
-        handleResumeResult(taskHandle, resumeResult)
-
-        resumeResult == TaskHandleImpl.ResumeResult.Resumed
+    private suspend fun taskHandleOnStateChanged(e: TaskHandleEvent.StateChanged) {
+        eventChannel.send(
+            TaskMasterEvent.TaskStateChanged to TaskMasterEvent.TaskStateChanged(
+                e.taskHandle,
+                e.state,
+                e.previousState
+            )
+        )
     }
 
-    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean) = taskHandlesMutex.withLock {
-        require(taskHandle is TaskHandleImpl && taskHandle in taskHandles) { "Unknown task handle" }
+    private suspend fun taskHandleOnFailed(e: TaskHandleEvent.Failed) {
+        taskHandlesMutex.withLock {
+            _taskHandles.remove(e.taskHandle)
+            runningTaskHandles.remove(e.taskHandle)
+            suspendedTaskHandles.remove(e.taskHandle)
+
+            removeTaskHandleEventListeners(e.taskHandle as TaskHandleImpl<*, *>)
+
+            consumeRemainingBudget()
+        }
+    }
+
+    private suspend fun taskHandleOnCompleted(e: TaskHandleEvent.Completed) {
+        taskHandlesMutex.withLock {
+            _taskHandles.remove(e.taskHandle)
+            runningTaskHandles.remove(e.taskHandle)
+
+            removeTaskHandleEventListeners(e.taskHandle as TaskHandleImpl<*, *>)
+
+            consumeRemainingBudget()
+        }
+    }
+
+    private fun removeTaskHandleEventListeners(taskHandle: TaskHandleImpl<*, *>) {
+        taskHandle.remove(this::taskHandleOnStateChanged)
+        taskHandle.remove(this::taskHandleOnFailed)
+        taskHandle.remove(this::taskHandleOnCompleted)
+    }
+
+    private suspend fun scheduleTask(taskHandle: TaskHandleImpl<*, *>, force: Boolean): Boolean =
+        if (taskHandle.state in taskScheduleableStates) {
+            if (
+                (force || availableBudget >= taskHandle.cost) &&
+                taskHandle.runCondition?.invoke() != false
+            ) {
+                trySuspendingRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
+                killRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
+
+                val didStart = if (availableBudget >= taskHandle.cost)
+                    startOrResumeTask(taskHandle)
+                else
+                    false
+
+                consumeRemainingBudget()
+
+                didStart
+            } else
+                false
+        } else
+            false
+
+    private suspend fun trySuspendingRunningTasksUntil(desiredAvailableBudget: Double) {
+        val maximumDebt = configuration.maximumDebt
+
+        if (availableBudget >= desiredAvailableBudget || maximumDebt == null)
+            return
+
+        val runningTaskHandlesIter = runningTaskHandles.iterator()
+        while (
+            availableBudget < desiredAvailableBudget &&
+            runningTaskHandlesIter.hasNext()
+        ) {
+            val runningTaskHandle = runningTaskHandlesIter.next()
+
+            if (!runningTaskHandle.suspendable)
+                continue
+
+            val desiredDebt = maximumDebt - runningTaskHandle.cost
+
+            killSuspendedUntil(desiredDebt = desiredDebt)
+
+            if (currentDebt <= desiredDebt) {
+                runningTaskHandlesIter.remove()
+
+                runningTaskHandle.suspend()
+                    .getOrElse {
+                        if (configuration.killIfSuspendFails)
+                            doKillTaskHandle(runningTaskHandle, remove = !configuration.rescheduleKilledTasks)
+
+                        false
+                    }
+                    .ifTrue {
+                        runningTaskHandlesIter.remove()
+                        suspendedTaskHandles.add(runningTaskHandle)
+                    }
+            }
+        }
+    }
+
+    private suspend fun killSuspendedUntil(desiredDebt: Double) {
+        if (!configuration.killSuspended)
+            return
+
+        val suspendedTaskHandlesIter = suspendedTaskHandles.iterator()
+
+        while (
+            currentDebt > desiredDebt &&
+            suspendedTaskHandlesIter.hasNext()
+        ) {
+            val suspendedTaskHandle = suspendedTaskHandlesIter.next()
+            suspendedTaskHandlesIter.remove()
+
+            doKillTaskHandle(suspendedTaskHandle, remove = !configuration.rescheduleKilledTasks)
+        }
+    }
+
+    private suspend fun killRunningTasksUntil(desiredAvailableBudget: Double) {
+        if (!configuration.killRunningTasks || availableBudget >= desiredAvailableBudget)
+            return
+
+        val runningTaskHandlesIter = runningTaskHandles.iterator()
+        while (
+            availableBudget < desiredAvailableBudget &&
+            runningTaskHandlesIter.hasNext()
+        ) {
+            val runningTaskHandle = runningTaskHandlesIter.next()
+            runningTaskHandlesIter.remove()
+
+            doKillTaskHandle(runningTaskHandle, remove = !configuration.rescheduleKilledTasks)
+        }
+    }
+
+    private suspend fun consumeRemainingBudget() {
+        if (availableBudget <= 0.0)
+            return
+
+        val suspendedTaskHandlesIter = suspendedTaskHandles.descendingIterator()
+        while (availableBudget > 0.0 && suspendedTaskHandlesIter.hasNext()) {
+            val suspendedTaskHandle = suspendedTaskHandlesIter.next()
+
+            if (availableBudget >= suspendedTaskHandle.cost)
+                startOrResumeTask(suspendedTaskHandle)
+        }
+
+        val taskHandlesIter = _taskHandles.descendingIterator()
+        while (availableBudget > 0.0 && taskHandlesIter.hasNext()) {
+            val taskHandle = taskHandlesIter.next()
+
+            if (taskHandle.isRunnable && availableBudget >= taskHandle.cost)
+                startOrResumeTask(taskHandle)
+        }
+    }
+
+    private suspend fun startOrResumeTask(taskHandle: TaskHandleImpl<*, *>): Boolean {
+        return if (taskHandle.state == Waiting || taskHandle.state == Killed) {
+            val didStart = taskHandle.run()
+            if (didStart)
+                runningTaskHandles.add(taskHandle)
+
+            didStart
+        } else if (taskHandle.state == Suspended) {
+            taskHandle.resume()
+                .getOrElse {
+                    if (configuration.killIfResumeFails)
+                        doKillTaskHandle(taskHandle, remove = !configuration.rescheduleKilledTasks)
+
+                    false
+                }.ifTrue {
+                    suspendedTaskHandles.remove(taskHandle)
+                    runningTaskHandles.add(taskHandle)
+                }
+        } else
+            throw IllegalStateException("Tried to call startOrResumeTask on a task handle that's not runnable")
+    }
+
+    private suspend fun doKillTaskHandle(taskHandle: TaskHandleImpl<*, *>, remove: Boolean = false) {
+        runningTaskHandles.remove(taskHandle)
+        suspendedTaskHandles.remove(taskHandle)
 
         taskHandle.kill()
 
-        if (remove)
-            taskHandles.remove(taskHandle)
-    }
-
-    override suspend fun stop(killRunning: Boolean) = taskHandlesMutex.withLock {
-        running = false
-
-        if (killRunning)
-            taskHandles.forEach {
-                if (!it.isDone)
-                    it.kill()
-            }
-
-        taskHandles.clear()
-    }
-
-    private suspend fun scheduleTask(taskHandle: TaskHandleImpl<*, *>, forceRun: Boolean) {
-        TODO("Not yet implemented")
-    }
-
-    private suspend fun handleSuspendResult(
-        taskHandle: TaskHandleImpl<*, *>,
-        suspendResult: TaskHandleImpl.SuspendResult,
-        rescheduleTasks: Boolean
-    ) {
-        TODO("Not yet implemented")
-    }
-
-    private suspend fun handleResumeResult(
-        taskHandle: TaskHandleImpl<*, *>,
-        resumeResult: TaskHandleImpl.ResumeResult
-    ) {
-        TODO("Not yet implemented")
+        if (remove || !configuration.rescheduleKilledTasks) {
+            removeTaskHandleEventListeners(taskHandle)
+            _taskHandles.remove(taskHandle)
+        }
     }
 }

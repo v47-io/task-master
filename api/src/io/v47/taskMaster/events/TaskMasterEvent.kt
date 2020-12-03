@@ -31,13 +31,22 @@
  */
 package io.v47.taskMaster.events
 
+import horus.events.EventKey
 import io.v47.taskMaster.TaskHandle
 import io.v47.taskMaster.TaskState
 
 sealed class TaskMasterEvent {
     abstract val taskHandle: TaskHandle<*, *>
 
-    data class TaskAdded(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent()
+    data class TaskAdded(override val taskHandle: TaskHandle<*, *>) : TaskMasterEvent() {
+        companion object : EventKey<TaskAdded>
+    }
 
-    data class TaskStateChanged(override val taskHandle: TaskHandle<*, *>, val state: TaskState) : TaskMasterEvent()
+    data class TaskStateChanged(
+        override val taskHandle: TaskHandle<*, *>,
+        val state: TaskState,
+        val previousState: TaskState
+    ) : TaskMasterEvent() {
+        companion object : EventKey<TaskStateChanged>
+    }
 }

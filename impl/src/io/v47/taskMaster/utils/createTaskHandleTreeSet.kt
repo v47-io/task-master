@@ -29,23 +29,25 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.spi
+package io.v47.taskMaster.utils
 
-import io.v47.taskMaster.Configuration
-import io.v47.taskMaster.TaskMaster
-import io.v47.taskMaster.TaskMasterImpl
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlin.coroutines.CoroutineContext
+import io.v47.taskMaster.TaskHandleImpl
+import java.util.*
 
-@PublishedApi
-internal class TaskMasterProviderImpl : TaskMasterProvider {
-    override fun create(configuration: Configuration, coroutineContext: CoroutineContext): TaskMaster {
-        val actualCoroutineContext = if (coroutineContext[Job] == null)
-            SupervisorJob() + coroutineContext
+/**
+ * Creates a TreeSet which sorts the task handles by priority and age.
+ *
+ * Task handles are ordered by priority ascending and then sequence number ascending.
+ *
+ * This puts the least important and oldest task handles at the start.
+ */
+internal fun createTaskHandleTreeSet(): TreeSet<TaskHandleImpl<*, *>> =
+    TreeSet { th1, th2 ->
+        // Priority ascending
+        val priorityComparison = th1.priority.compareTo(th2.priority)
+        if (priorityComparison == 0)
+            // Sequence number ascending (oldest first)
+            th1.sequenceNumber.compareTo(th2.sequenceNumber)
         else
-            coroutineContext
-
-        return TaskMasterImpl(configuration, actualCoroutineContext)
+            priorityComparison
     }
-}

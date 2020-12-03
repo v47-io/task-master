@@ -31,25 +31,24 @@
  */
 package io.v47.taskMaster
 
+import horus.events.EventKey
 import io.v47.taskMaster.events.TaskHandleEvent
 import io.v47.taskMaster.events.TaskHandleEventEmitter
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.receiveOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.time.Instant
 import java.util.*
 import java.util.concurrent.atomic.AtomicReference
 
-private val taskDoneStates = setOf(TaskState.Complete, TaskState.Failed, TaskState.Killed)
 private val taskRunnableStates = setOf(TaskState.Waiting, TaskState.Killed)
-
-internal val TaskHandleImpl<*, *>.isDone: Boolean
-    get() = state in taskDoneStates
 
 internal val TaskHandleImpl<*, *>.isRunnable: Boolean
     get() = state in taskRunnableStates
+
 
 @Suppress("LongParameterList")
 internal class TaskHandleImpl<I, O>(
@@ -58,7 +57,8 @@ internal class TaskHandleImpl<I, O>(
     override val input: I,
     override var priority: Int,
     override var runCondition: RunCondition?,
-    val cost: Double
+    val cost: Double,
+    val sequenceNumber: Long
 ) : TaskHandle<I, O>, TaskHandleEventEmitter<I, O>() {
     override val id = UUID.randomUUID().toString()
 
@@ -85,27 +85,44 @@ internal class TaskHandleImpl<I, O>(
     override val state: TaskState
         get() = _state.get()
 
-    var lastActive: Instant? = null
-        private set
-
     private lateinit var taskLogger: Logger
 
     private val currentTaskMutex = Mutex()
     private var currentTaskJob: Job? = null
 
+    private var eventChannel: Channel<Pair<EventKey<TaskHandleEvent>, TaskHandleEvent>>? = null
+    private var currentEventChannelDone: Deferred<Unit>? = null
+
     suspend fun run() =
         currentTaskMutex.withLock {
-            if (isRunnable && runCondition?.invoke() != false) {
+            if (isRunnable) {
+                val ec = Channel<Pair<EventKey<TaskHandleEvent>, TaskHandleEvent>>(Channel.BUFFERED)
+                eventChannel = ec
+
+                val ecDone = CompletableDeferred<Unit>()
+                currentEventChannelDone = ecDone
+
+                coroutineScope.launch {
+                    while (isActive) {
+                        @Suppress("EXPERIMENTAL_API_USAGE")
+                        val event = ec.receiveOrNull() ?: break
+
+                        emit(event.first, event.second)
+                    }
+
+                    ecDone.complete(Unit)
+                }
+
                 val task = factory.create(input, this)
                 suspendable = task is SuspendableTask
                 taskLogger = LoggerFactory.getLogger(task::class.java)!!
 
                 taskLogger.trace("Created with input {}", input)
 
-                lastActive = Instant.now()
-
                 currentTask = task
                 setStateAndEmit(TaskState.Running)
+
+                val self = this
 
                 currentTaskJob = coroutineScope.launch {
                     @Suppress("TooGenericExceptionCaught")
@@ -118,25 +135,26 @@ internal class TaskHandleImpl<I, O>(
 
                         taskLogger.trace("Finished!")
 
-                        currentTaskMutex.withLock {
-                            currentTask = null
-                            currentTaskJob = null
-                        }
-
                         _output.set(result)
 
                         setStateAndEmit(TaskState.Complete)
-                        emit(TaskHandleEvent.Completed, TaskHandleEvent.Completed(result as Any))
+                        eventChannel?.send(TaskHandleEvent.Completed to TaskHandleEvent.Completed(result as Any, self))
+
+                        currentTaskMutex.withLock {
+                            performCleanup(null)
+                        }
                     } catch (x: Throwable) {
                         if (x !is CancellationException) {
                             taskLogger.warn("Execution failed with exception", x)
 
-                            performCleanup(task)
-
                             _error.set(x)
 
                             setStateAndEmit(TaskState.Failed)
-                            emit(TaskHandleEvent.Failed, TaskHandleEvent.Failed(x))
+                            eventChannel?.send(TaskHandleEvent.Failed to TaskHandleEvent.Failed(x, self))
+
+                            currentTaskMutex.withLock {
+                                performCleanup(task)
+                            }
                         }
 
                         if (x is CancellationException)
@@ -149,7 +167,7 @@ internal class TaskHandleImpl<I, O>(
                 false
         }
 
-    suspend fun suspend(): SuspendResult =
+    suspend fun suspend(): Result<Boolean> =
         currentTaskMutex.withLock {
             if (suspendable && state == TaskState.Running) {
                 @Suppress("TooGenericExceptionCaught")
@@ -158,20 +176,16 @@ internal class TaskHandleImpl<I, O>(
                     if (result)
                         setStateAndEmit(TaskState.Suspended)
 
-                    if (result) {
-                        lastActive = Instant.now()
-                        SuspendResult.Suspended
-                    } else
-                        SuspendResult.NotSuspended
+                    Result.success(result)
                 } catch (x: Throwable) {
                     taskLogger.warn("Failed to suspend with error", x)
-                    SuspendResult.Failed
+                    Result.failure(x)
                 }
             } else
-                SuspendResult.NotSuspended
+                Result.success(false)
         }
 
-    suspend fun resume(): ResumeResult =
+    suspend fun resume(): Result<Boolean> =
         currentTaskMutex.withLock {
             if (suspendable && state == TaskState.Suspended) {
                 @Suppress("TooGenericExceptionCaught")
@@ -180,23 +194,22 @@ internal class TaskHandleImpl<I, O>(
                     if (result)
                         setStateAndEmit(TaskState.Running)
 
-                    if (result) {
-                        lastActive = Instant.now()
-                        ResumeResult.Resumed
-                    } else
-                        ResumeResult.NotResumed
+                    Result.success(result)
                 } catch (x: Throwable) {
                     taskLogger.warn("Failed to resume task with error", x)
-                    ResumeResult.Failed
+                    Result.failure(x)
                 }
             } else
-                ResumeResult.NotResumed
+                Result.success(false)
         }
 
     suspend fun kill() {
         currentTaskMutex.withLock {
             if (state == TaskState.Killed)
                 return
+
+            setStateAndEmit(TaskState.Killed)
+            eventChannel!!.send(TaskHandleEvent.Killed to TaskHandleEvent.Killed(this))
 
             if (state == TaskState.Suspended) {
                 currentTaskJob?.let {
@@ -207,43 +220,50 @@ internal class TaskHandleImpl<I, O>(
                 currentTaskJob = null
             }
 
+            _output.set(null)
+            _error.set(null)
+
             currentTask?.let {
                 performCleanup(it)
             }
-
-            _output.set(null)
-            _error.set(null)
-            setStateAndEmit(TaskState.Killed)
-
-            emit(TaskHandleEvent.Killed, TaskHandleEvent.Killed)
 
             taskLogger.debug("Task killed")
         }
     }
 
-    private suspend fun performCleanup(task: Task<I, O>) {
+    private suspend fun performCleanup(task: Task<I, O>?) {
         runCatching {
-            task.clean()
+            task?.clean()
         }.onFailure { cleanX ->
             taskLogger.debug("Clean-up failed with exception", cleanX)
         }
 
         currentTask = null
         currentTaskJob = null
+
+        eventChannel!!.close()
+        eventChannel = null
+
+        currentEventChannelDone!!.await()
+        currentEventChannelDone = null
     }
 
     private suspend fun setStateAndEmit(newState: TaskState) {
-        var changed = false
-        _state.updateAndGet { oldState ->
-            if (newState != oldState) {
-                changed = true
+        val previousState = _state.getAndUpdate { oldState ->
+            if (newState != oldState)
                 newState
-            } else
+            else
                 oldState
         }
 
-        if (changed)
-            emit(TaskHandleEvent.StateChanged, TaskHandleEvent.StateChanged(newState))
+        if (newState != previousState)
+            eventChannel?.send(
+                TaskHandleEvent.StateChanged to TaskHandleEvent.StateChanged(
+                    newState,
+                    previousState,
+                    this
+                )
+            )
     }
 
     override fun toString(): String {
@@ -261,16 +281,4 @@ internal class TaskHandleImpl<I, O>(
 
     fun <I> matches(factory: TaskFactory<*, *>, input: I) =
         this.factory.javaClass == factory::class.java && this.input == input
-
-    enum class SuspendResult {
-        Suspended,
-        NotSuspended,
-        Failed
-    }
-
-    enum class ResumeResult {
-        Resumed,
-        NotResumed,
-        Failed
-    }
 }

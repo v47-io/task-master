@@ -32,20 +32,29 @@
 package io.v47.taskMaster.events
 
 import horus.events.EventKey
+import io.v47.taskMaster.TaskHandle
 import io.v47.taskMaster.TaskState
 
 sealed class TaskHandleEvent {
-    data class StateChanged(val state: TaskState) : TaskHandleEvent() {
+    abstract val taskHandle: TaskHandle<*, *>
+
+    data class StateChanged(
+        val state: TaskState,
+        val previousState: TaskState,
+        override val taskHandle: TaskHandle<*, *>
+    ) : TaskHandleEvent() {
         companion object : EventKey<StateChanged>
     }
 
-    data class Completed(val output: Any) : TaskHandleEvent() {
+    data class Completed(val output: Any, override val taskHandle: TaskHandle<*, *>) : TaskHandleEvent() {
         companion object : EventKey<Completed>
     }
 
-    data class Failed(val error: Throwable) : TaskHandleEvent() {
+    data class Failed(val error: Throwable, override val taskHandle: TaskHandle<*, *>) : TaskHandleEvent() {
         companion object : EventKey<Failed>
     }
 
-    object Killed : TaskHandleEvent(), EventKey<Killed>
+    data class Killed(override val taskHandle: TaskHandle<*, *>) : TaskHandleEvent() {
+        companion object : EventKey<Killed>
+    }
 }

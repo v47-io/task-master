@@ -29,23 +29,10 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.v47.taskMaster.spi
+package io.v47.taskMaster.exceptions
 
-import io.v47.taskMaster.Configuration
-import io.v47.taskMaster.TaskMaster
-import io.v47.taskMaster.TaskMasterImpl
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlin.coroutines.CoroutineContext
+import io.v47.taskMaster.TaskHandle
 
-@PublishedApi
-internal class TaskMasterProviderImpl : TaskMasterProvider {
-    override fun create(configuration: Configuration, coroutineContext: CoroutineContext): TaskMaster {
-        val actualCoroutineContext = if (coroutineContext[Job] == null)
-            SupervisorJob() + coroutineContext
-        else
-            coroutineContext
+class SuspendFailedException(val taskHandle: TaskHandle<*, *>, cause: Throwable) : RuntimeException(cause)
 
-        return TaskMasterImpl(configuration, actualCoroutineContext)
-    }
-}
+class ResumeFailedException(val taskHandle: TaskHandle<*, *>, cause: Throwable) : RuntimeException(cause)
