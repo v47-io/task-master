@@ -139,9 +139,7 @@ internal class TaskHandleImpl<I, O>(
                         if (taskLogger.isTraceEnabled)
                             taskLogger.trace("Running...")
 
-                        val result = supervisorScope {
-                            task.run()
-                        }
+                        val result = task.run()
 
                         if (taskLogger.isTraceEnabled)
                             taskLogger.trace("Finished!")
@@ -156,7 +154,7 @@ internal class TaskHandleImpl<I, O>(
                         }
                     } catch (x: Throwable) {
                         if (x !is CancellationException) {
-                            taskLogger.warn("Execution failed with exception", x)
+                            taskLogger.warn("Execution failed with exception. Handle: $self", x)
 
                             _error.set(x)
 
@@ -189,7 +187,7 @@ internal class TaskHandleImpl<I, O>(
 
                     Result.success(result)
                 } catch (x: Throwable) {
-                    taskLogger.warn("Failed to suspend with error", x)
+                    taskLogger.warn("Failed to suspend with error. Handle: $this", x)
                     Result.failure(x)
                 }
             } else
@@ -207,7 +205,7 @@ internal class TaskHandleImpl<I, O>(
 
                     Result.success(result)
                 } catch (x: Throwable) {
-                    taskLogger.warn("Failed to resume task with error", x)
+                    taskLogger.warn("Failed to resume task with error. Handle: $this", x)
                     Result.failure(x)
                 }
             } else
@@ -222,14 +220,12 @@ internal class TaskHandleImpl<I, O>(
             setStateAndEmit(TaskState.Killed)
             eventChannel!!.send(TaskHandleEvent.Killed to TaskHandleEvent.Killed(this))
 
-            if (state == TaskState.Suspended) {
-                currentTaskJob?.let {
-                    it.cancel("job killed")
-                    it.join()
-                }
-
-                currentTaskJob = null
+            currentTaskJob?.let {
+                it.cancel("job killed")
+                it.join()
             }
+
+            currentTaskJob = null
 
             _output.set(null)
             _error.set(null)
@@ -238,8 +234,8 @@ internal class TaskHandleImpl<I, O>(
                 performCleanup(it)
             }
 
-            if (taskLogger.isDebugEnabled)
-                taskLogger.debug("Task killed")
+            if (taskLogger.isTraceEnabled)
+                taskLogger.trace("Task killed. Handle: {}", this)
         }
     }
 
@@ -248,7 +244,7 @@ internal class TaskHandleImpl<I, O>(
             task?.clean()
         }.onFailure { cleanX ->
             if (taskLogger.isDebugEnabled)
-                taskLogger.debug("Clean-up failed with exception", cleanX)
+                taskLogger.debug("Clean-up failed with exception. Handle: $this", cleanX)
         }
 
         currentTask = null

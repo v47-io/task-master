@@ -34,7 +34,7 @@ package testsupport.mocks
 import io.v47.taskMaster.RunCondition
 
 data class MockTaskInput(
-    val cost: Double = 0.0,
+    val cost: Double = 1.0,
     val duration: Long = 1000,
     val failWhileRunning: Boolean = false,
     val failDuringCleanUp: Boolean = false,

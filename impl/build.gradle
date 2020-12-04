@@ -5,4 +5,5 @@ dependencies {
     implementation libraries.coroutines
 
     testImplementation project(':test-support')
+    testRuntimeOnly libraries.logback
 }

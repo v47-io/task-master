@@ -35,7 +35,7 @@ import io.v47.taskMaster.events.TaskHandleEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import testsupport.mocks.MockTaskInput
-import mocks.createMockTaskHandle
+import utils.createMockTaskHandle
 import org.junit.jupiter.api.*
 import testsupport.utils.deferredOnce
 import testsupport.utils.record

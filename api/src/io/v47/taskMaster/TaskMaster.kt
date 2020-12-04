@@ -45,6 +45,11 @@ import kotlin.coroutines.CoroutineContext
  * `TaskMaster` is an unfair, concurrent work scheduler. It prioritizes newer and
  * high-priority tasks over older, low-priority tasks.
  *
+ * Unfair means that no matter which task you kill or suspend, task master will
+ * always start the highest-priority and most recent tasks first, regardless how
+ * long other tasks have been waiting to be executed. For more information about
+ * unfairness see the [add] function.
+ *
  * The most important concepts to understand are the budget and task cost. Every
  * task has a cost that is calculated before it is executed. This cost is then
  * compared to the available budget to decide if the task can be run.
@@ -133,6 +138,14 @@ interface TaskMaster : EventEmitter {
      * try to schedule the existing task for immediate execution. Other tasks may be
      * suspended or killed as a consequence.
      *
+     * However, task master will always try to respect the task priorities. This means
+     * that even with repeated calls to this function the task might not immediately
+     * run if there are higher-priority tasks running.
+     *
+     * If a task absolutely, positively has to run _NOW_, call this function again with
+     * the priority set to [Int.MAX_VALUE]. This is however extremely discouraged
+     * behavior as it defeats the purpose of the task master.
+     *
      * @param[factory] The task factory that will create the actual task that will be executed
      * @param[input] The input for the task
      * @param[priority] The priority of the task.
@@ -154,11 +167,16 @@ interface TaskMaster : EventEmitter {
      * are available. If not, other suspended tasks may be killed to reduce debt
      * to a point where this task can be suspended.
      *
+     * However, task master will always try to respect the task priorities. This
+     * means that the task may not be suspended if there is too much debt and no
+     * lower-priority suspended tasks could be killed.
+     *
      * This may not suspend a task if task suspension is not configured (no
      * `maximumDebt` configured).
      *
      * By default the task master will try to reclaim the freed budget by running
-     * or resuming other tasks.
+     * or resuming other tasks, starting with the newest tasks at the hightest
+     * priority.
      *
      * @param[taskHandle] The task handle that identifies the task to suspend
      * @param[force] Indicates whether to try forcing to suspend by killing other
@@ -180,6 +198,10 @@ interface TaskMaster : EventEmitter {
      * Tries to resume the task identified by the specified handle if resources are
      * available. If not, other running tasks may be suspended to reduce the consumed
      * budget to a point where this task can be resumed.
+     *
+     * However, task master will always try to respect the task priorities. This means
+     * that the task may not be resumed if there is not enough budget and not enough
+     * running tasks could be suspended or killed.
      *
      * This may not suspend a task if task suspension is not configured (no `maximumDebt`
      * configured) and may kill running tasks to free the required resources.
@@ -286,19 +308,25 @@ data class Configuration(
          * The maximum cost of tasks that can be suspended at the
          * same time.
          *
-         * Tasks will not be suspended if this is `null`
+         * Tasks will not be suspended if this is `null`.
+         *
+         * Default: `null`
          */
         var maximumDebt: Double?
 
         /**
          * Indicates whether tasks should be rescheduled for immediate
-         * execution if added repeatedly
+         * execution if added repeatedly.
+         *
+         * Default: `true`
          */
         var rescheduleOnAdd: Boolean
 
         /**
          * Indicates whether running tasks should be killed if budget
-         * is required to schedule new tasks
+         * is required to schedule new tasks.
+         *
+         * Default: `true`
          */
         var killRunningTasks: Boolean
 
@@ -306,21 +334,27 @@ data class Configuration(
          * Indicates whether suspended tasks should be killed to decrease
          * the current debt when trying to suspend other tasks.
          *
-         * This has no effect if no [maximumDebt] is configured
+         * This has no effect if no [maximumDebt] is configured.
+         *
+         * Default: `true`
          */
         var killSuspended: Boolean
 
         /**
          * Indicates whether to kill a task if its suspension failed.
          *
-         * This has no effect if no [maximumDebt] is configured
+         * This has no effect if no [maximumDebt] is configured.
+         *
+         * Default: `false`
          */
         var killIfSuspendFails: Boolean
 
         /**
          * Indicates whether to kill a task if its resumption failed.
          *
-         * This has no effect if no [maximumDebt] is configured
+         * This has no effect if no [maximumDebt] is configured.
+         *
+         * Default: `true`
          */
         var killIfResumeFails: Boolean
 
@@ -328,7 +362,9 @@ data class Configuration(
          * Indicates whether to reschedule previously killed tasks when
          * budget becomes available.
          *
-         * Tasks are immediately discarded when killed if this is `false`
+         * Tasks are immediately discarded when killed if this is `false`.
+         *
+         * Default: `false`
          */
         var rescheduleKilledTasks: Boolean
 
@@ -336,7 +372,10 @@ data class Configuration(
          * The coroutine context to use when running tasks.
          *
          * If the context doesn't contain a [kotlinx.coroutines.SupervisorJob] a
-         * new context based on this one may be created
+         * new context based on this one may be created.
+         *
+         * By default the [Dispatchers.Default] context is used, but it's
+         * recommended that a separate context is specified
          */
         var coroutineContext: CoroutineContext
     }

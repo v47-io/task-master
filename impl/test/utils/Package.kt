@@ -29,19 +29,19 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package mocks
+package utils
 
 import io.v47.taskMaster.TaskHandleImpl
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.*
+import org.junit.jupiter.api.Assertions
 import testsupport.mocks.MockTaskFactory
 import testsupport.mocks.MockTaskInput
 import java.util.concurrent.Executors
+import kotlin.coroutines.CoroutineContext
 
 val mockFactory = MockTaskFactory()
 val mockCoroutineScope = object : CoroutineScope {
-    override val coroutineContext = Executors.newFixedThreadPool(3).asCoroutineDispatcher() + SupervisorJob()
+    override val coroutineContext = Executors.newFixedThreadPool(2).asCoroutineDispatcher() + SupervisorJob()
 }
 
 internal fun createMockTaskHandle(input: MockTaskInput): TaskHandleImpl<MockTaskInput, Unit> {
@@ -58,4 +58,30 @@ internal fun createMockTaskHandle(input: MockTaskInput): TaskHandleImpl<MockTask
     println("Testing with handle $handle")
 
     return handle
+}
+
+internal fun withCoroutineContext(withSupervisorJob: Boolean = true, block: suspend (CoroutineContext) -> Unit) {
+    var coroutineContext: CoroutineContext = Executors.newFixedThreadPool(2).asCoroutineDispatcher()
+    if (withSupervisorJob)
+        coroutineContext += SupervisorJob()
+
+    try {
+        runBlocking(coroutineContext) {
+            block(coroutineContext)
+        }
+    } finally {
+        runBlocking {
+            runCatching {
+                coroutineContext.cancel()
+            }
+        }
+    }
+}
+
+internal suspend fun assertDoesntRunLongerThan(millis: Long, block: suspend () -> Unit) {
+    val start = System.currentTimeMillis()
+
+    block()
+
+    Assertions.assertTrue(System.currentTimeMillis() - start <= millis, "The block took longer than ${millis}ms to run")
 }
