@@ -25,7 +25,7 @@ build:
 test:
   stage: test
   script:
-    - $GRADLE_CMD test
+    - $GRADLE_CMD build
   allow_failure: false
   artifacts:
     when: on_failure
