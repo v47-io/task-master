@@ -33,12 +33,13 @@ package io.v47.taskMaster.events
 
 import io.v47.taskMaster.Task
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import testsupport.mocks.MockTask
 import testsupport.mocks.MockTaskEvent
 import testsupport.mocks.MockTaskInput
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestInstance
 import testsupport.utils.deferredOnce
 import testsupport.utils.record
 
@@ -145,6 +146,8 @@ class TaskHandleEventEmitterTest {
             events
         )
 
+        val firstOnce = mockEmitter.deferredOnce(MockTaskEvent)
+
         mockEmitter.clear(MockTaskEvent)
 
         runBlocking {
@@ -158,6 +161,8 @@ class TaskHandleEventEmitterTest {
             ),
             events
         )
+
+        assertTrue(!firstOnce.isCompleted)
     }
 
     @Test

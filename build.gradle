@@ -71,8 +71,8 @@ subprojects {
         }
     }
 
-    sourceCompatibility = 11
-    targetCompatibility = 11
+    sourceCompatibility = 8
+    targetCompatibility = 8
 
     compileKotlin {
         kotlinOptions {
@@ -81,14 +81,14 @@ subprojects {
                     '-Xno-param-assertions',
                     '-Xno-call-assertions'
             ]
-            jvmTarget = '11'
+            jvmTarget = '1.6'
             javaParameters = true
         }
     }
 
     compileTestKotlin {
         kotlinOptions {
-            jvmTarget = '11'
+            jvmTarget = '1.8'
             javaParameters = true
         }
     }

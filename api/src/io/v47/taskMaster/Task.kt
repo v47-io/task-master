@@ -157,11 +157,7 @@ interface TaskHandle<I, O> : EventEmitter {
 }
 
 /**
- * Contains pre-defined priority values for task queueing and execution.
- *
- * Tasks with a priority below `HIGH` can only use part of the budget that
- * isn't reserved, i.e. tasks will not be executed even if there is still
- * reserved budget available when the remaining budget is depleted.
+ * Contains pre-defined priority values for task queueing and execution
  */
 object TaskPriority {
     const val LOW = 10

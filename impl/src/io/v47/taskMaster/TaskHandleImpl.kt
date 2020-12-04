@@ -34,6 +34,7 @@ package io.v47.taskMaster
 import horus.events.EventKey
 import io.v47.taskMaster.events.TaskHandleEvent
 import io.v47.taskMaster.events.TaskHandleEventEmitter
+import io.v47.taskMaster.utils.identityToString
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.receiveOrNull
@@ -45,10 +46,17 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicReference
 
 private val taskRunnableStates = setOf(TaskState.Waiting, TaskState.Killed)
+private val taskScheduleableStates = setOf(TaskState.Waiting, TaskState.Suspended, TaskState.Killed)
+private val taskResumeableStates = setOf(TaskState.Suspended)
 
 internal val TaskHandleImpl<*, *>.isRunnable: Boolean
     get() = state in taskRunnableStates
 
+internal val TaskHandleImpl<*, *>.isScheduleable: Boolean
+    get() = state in taskScheduleableStates
+
+internal val TaskHandleImpl<*, *>.isResumeable: Boolean
+    get() = state in taskResumeableStates
 
 @Suppress("LongParameterList")
 internal class TaskHandleImpl<I, O>(
@@ -117,7 +125,8 @@ internal class TaskHandleImpl<I, O>(
                 suspendable = task is SuspendableTask
                 taskLogger = LoggerFactory.getLogger(task::class.java)!!
 
-                taskLogger.trace("Created with input {}", input)
+                if (taskLogger.isTraceEnabled)
+                    taskLogger.trace("Created with input {}", input)
 
                 currentTask = task
                 setStateAndEmit(TaskState.Running)
@@ -127,13 +136,15 @@ internal class TaskHandleImpl<I, O>(
                 currentTaskJob = coroutineScope.launch {
                     @Suppress("TooGenericExceptionCaught")
                     try {
-                        taskLogger.trace("Running...")
+                        if (taskLogger.isTraceEnabled)
+                            taskLogger.trace("Running...")
 
                         val result = supervisorScope {
                             task.run()
                         }
 
-                        taskLogger.trace("Finished!")
+                        if (taskLogger.isTraceEnabled)
+                            taskLogger.trace("Finished!")
 
                         _output.set(result)
 
@@ -227,7 +238,8 @@ internal class TaskHandleImpl<I, O>(
                 performCleanup(it)
             }
 
-            taskLogger.debug("Task killed")
+            if (taskLogger.isDebugEnabled)
+                taskLogger.debug("Task killed")
         }
     }
 
@@ -235,7 +247,8 @@ internal class TaskHandleImpl<I, O>(
         runCatching {
             task?.clean()
         }.onFailure { cleanX ->
-            taskLogger.debug("Clean-up failed with exception", cleanX)
+            if (taskLogger.isDebugEnabled)
+                taskLogger.debug("Clean-up failed with exception", cleanX)
         }
 
         currentTask = null
@@ -269,12 +282,13 @@ internal class TaskHandleImpl<I, O>(
     override fun toString(): String {
         return "TaskHandle(" +
                 "id='$id', " +
+                "state=$state, " +
+                "factory=${factory.identityToString()}, " +
                 "input=$input, " +
                 "priority=$priority, " +
-                "runCondition=${runCondition?.let { "<set>" } ?: "<unset>"}, " +
+                "runCondition=${runCondition?.identityToString() ?: "null"}, " +
                 "output=${_output.get() ?: "<unavailable>"}, " +
                 "error=${_error.get() ?: "<unavailable>"}, " +
-                "state=$state, " +
                 "suspendable=$suspendable" +
                 ")"
     }

@@ -7,5 +7,7 @@ dependencies {
 
     testImplementation libraries.coroutines
     testImplementation project(':test-support')
+
+    testRuntimeOnly libraries.logback
     testRuntimeOnly project(':impl')
 }

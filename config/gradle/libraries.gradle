@@ -3,26 +3,24 @@ ext {
     slf4jVersion = '1.7.30'
 
     // Implementation libraries
-    atomicFuVersion = '0.14.4'
     coroutinesVersion = '1.4.1'
     horusEventsVersion = '2.1.0'
-    logbackVersion = '1.2.3'
 
     // Testing libraries
     junitVersion = '5.7.0'
+    logbackVersion = '1.2.3'
 
     libraries = [
             // Core libraries
             slf4j      : "org.slf4j:slf4j-api:$slf4jVersion",
 
             // Implementation libraries
-            atomicFu   : "org.jetbrains.kotlinx:atomicfu-gradle-plugin:$atomicFuVersion",
             coroutines : "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion",
             horusEvents: "com.vemilyus.horus:horus-events:$horusEventsVersion",
-            logback    : "ch.qos.logback:logback-classic:$logbackVersion",
 
             // Testing libraries
             junit      : "org.junit.jupiter:junit-jupiter:$junitVersion",
-            junitEngine: "org.junit.jupiter:junit-jupiter-engine:$junitVersion"
+            junitEngine: "org.junit.jupiter:junit-jupiter-engine:$junitVersion",
+            logback    : "ch.qos.logback:logback-classic:$logbackVersion"
     ]
 }

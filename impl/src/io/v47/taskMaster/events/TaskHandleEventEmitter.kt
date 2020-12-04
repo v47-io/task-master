@@ -66,6 +66,7 @@ internal open class TaskHandleEventEmitter<I, O> : DefaultEventEmitter() {
     private val nonTaskHandleListenerProxiesOnce =
         ConcurrentHashMap<suspend (Any) -> Unit, suspend (Any) -> Unit>()
 
+    @Suppress("NestedBlockDepth")
     private fun addTaskListeners() {
         currentTask?.let { task ->
             if (task is EventEmitter) {
@@ -130,7 +131,16 @@ internal open class TaskHandleEventEmitter<I, O> : DefaultEventEmitter() {
     }
 
     override fun clear(key: EventKey<*>?) {
-        super.clear(key)
+        // Don't call super.clear(key) because that would remove
+        // the listeners added by TaskMasterImpl and effectively
+        // detach the handle, creating a memory leak if it's not
+        // removed on completion or failure of the task. This
+        // would also remove the ability to trigger the execution
+        // of more tasks afterwards so it's generally a bad idea
+        // to clear all events here.
+        //
+        // TaskHandleImpl takes care to remove its own listeners
+        // when they are no longer needed.
 
         currentTask?.let {
             if (it is EventEmitter)
@@ -139,10 +149,13 @@ internal open class TaskHandleEventEmitter<I, O> : DefaultEventEmitter() {
 
         if (key != null) {
             nonTaskHandleListeners.remove(key)
-            nonTaskHandleListenersOnce.remove(key)
+            nonTaskHandleListenersOnce.remove(key)?.let {
+                nonTaskHandleListenerProxiesOnce.entries.removeIf { (_, value) -> value in it }
+            }
         } else {
             nonTaskHandleListeners.clear()
             nonTaskHandleListenersOnce.clear()
+            nonTaskHandleListenerProxiesOnce.clear()
         }
     }
 

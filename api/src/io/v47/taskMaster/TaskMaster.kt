@@ -32,6 +32,8 @@
 package io.v47.taskMaster
 
 import horus.events.EventEmitter
+import io.v47.taskMaster.exceptions.ResumeFailedException
+import io.v47.taskMaster.exceptions.SuspendFailedException
 import io.v47.taskMaster.spi.TaskMasterProvider
 import kotlinx.coroutines.Dispatchers
 import org.slf4j.Logger
@@ -39,6 +41,32 @@ import org.slf4j.LoggerFactory
 import java.util.*
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * `TaskMaster` is an unfair, concurrent work scheduler. It prioritizes newer and
+ * high-priority tasks over older, low-priority tasks.
+ *
+ * The most important concepts to understand are the budget and task cost. Every
+ * task has a cost that is calculated before it is executed. This cost is then
+ * compared to the available budget to decide if the task can be run.
+ *
+ * You define a [Configuration.totalBudget] which is the base budget for all task
+ * execution in `TaskMaster`. Optionally the task master can temporarily suspend
+ * running tasks to make budget available for other tasks. This is enabled if you
+ * configure a [Configuration.maximumDebt] which indicates the maximum sum of cost
+ * that suspended tasks can accumulate before being killed.
+ *
+ * Being killed is not the end of a task though. If so configured to do so the task
+ * master will pick up killed tasks and execute them again once more budget becomes
+ * available. This is configured with [Configuration.rescheduleKilledTasks].
+ *
+ * The task master offers a few other [Configuration] properties which allow you to
+ * customize its behavior to your needs.
+ *
+ * In addition to those properties you also configure a [CoroutineContext] which is
+ * used to concurrently execute the tasks. You should make at least two threads
+ * available to the task master, otherwise it might not be able to function because
+ * some management tasks might be done concurrently.
+ */
 interface TaskMaster : EventEmitter {
     companion object {
         private val providers = ServiceLoader.load(TaskMasterProvider::class.java)
@@ -58,7 +86,7 @@ interface TaskMaster : EventEmitter {
             val (totalBudget, maximumDebt, _, _) = configuration
 
             require(totalBudget > 0) { "No budget set. No tasks will run" }
-            require(maximumDebt == null || maximumDebt >= 0) { "Maximum debt must be null or not negative" }
+            require(maximumDebt == null || maximumDebt > 0) { "Maximum debt must be null or greater than 0" }
 
             val provider = providers.findFirst().orElse(null)
                 ?: throw ServiceConfigurationError("No TaskMasterProvider implementation found on classpath!")
@@ -67,11 +95,8 @@ interface TaskMaster : EventEmitter {
 
             log.info("Creating TaskMaster using provider '{}'", provider::class.qualifiedName)
 
-            if (maximumDebt == 0.0)
-                log.warn("Maximum debt is 0. Tasks will always be killed instead of being suspended if possible")
-
             if (maximumDebt == null)
-                log.warn("No maximum debt configured. Too many suspended tasks could lead to resource exhaustion")
+                log.warn("No maximum debt configured. Tasks will be killed instead of being suspended.")
 
             return provider.create(
                 configuration,
@@ -111,9 +136,9 @@ interface TaskMaster : EventEmitter {
      * @param[factory] The task factory that will create the actual task that will be executed
      * @param[input] The input for the task
      * @param[priority] The priority of the task.
-     *                  This is reset on repeated calls to this function
+     *                  This may be reset on repeated calls to this function
      * @param[runCondition] The condition that decides whether the task will run.
-     *                      This is reset on repeated calls to this function
+     *                      This may be reset on repeated calls to this function
      *
      * @return A task handle for the new task or an existing one
      */
@@ -124,17 +149,78 @@ interface TaskMaster : EventEmitter {
         runCondition: RunCondition? = null
     ): TaskHandle<I, O>
 
+    /**
+     * Tries to suspend the task identified by the specified handle if resources
+     * are available. If not, other suspended tasks may be killed to reduce debt
+     * to a point where this task can be suspended.
+     *
+     * This may not suspend a task if task suspension is not configured (no
+     * `maximumDebt` configured).
+     *
+     * By default the task master will try to reclaim the freed budget by running
+     * or resuming other tasks.
+     *
+     * @param[taskHandle] The task handle that identifies the task to suspend
+     * @param[force] Indicates whether to try forcing to suspend by killing other
+     *               suspended tasks
+     * @param[consumeFreedBudget] Indicates whether the task master should try to
+     *                            use the freed budget to run or resume other tasks
+     *
+     * @return A boolean that indicates whether the task was suspended
+     * @throws SuspendFailedException if the suspend operation of the task failed
+     *                                with an exception
+     */
     suspend fun <I, O> suspend(
         taskHandle: TaskHandle<I, O>,
         force: Boolean = false,
         consumeFreedBudget: Boolean = true
     ): Boolean
 
+    /**
+     * Tries to resume the task identified by the specified handle if resources are
+     * available. If not, other running tasks may be suspended to reduce the consumed
+     * budget to a point where this task can be resumed.
+     *
+     * This may not suspend a task if task suspension is not configured (no `maximumDebt`
+     * configured) and may kill running tasks to free the required resources.
+     *
+     * @param[taskHandle] The task handle that identifies the task to resume
+     * @param[force] Indicates whether to try forcing to resume by suspending or killing
+     *               other running tasks
+     *
+     * @return A boolean that indicates whether the task was resumed
+     * @throws ResumeFailedException if the resume operation of the task failed with
+     *                               an exception
+     */
     suspend fun <I, O> resume(taskHandle: TaskHandle<I, O>, force: Boolean = false): Boolean
 
-    suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false)
+    /**
+     * Kills the task identified by the specified task handle.
+     *
+     * The task may remain known to the task master and may be rescheduled to run at
+     * a later time.
+     *
+     * @param[taskHandle] The task handle that identifies the task to kill
+     * @param[remove] Indicates whether to remove the task entirely. This will prevent it
+     *                from being re-run at a later time
+     * @param[consumeFreedBudget] Indicates whether the task master should try to use the
+     *                            freed budget to run or resume other tasks
+     */
+    suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false, consumeFreedBudget: Boolean = true)
 }
 
+/**
+ * Contains all configuration properties for `TaskMaster` instances.
+ *
+ * @see totalBudget
+ * @see maximumDebt
+ * @see rescheduleOnAdd
+ * @see killRunningTasks
+ * @see killSuspended
+ * @see killIfSuspendFails
+ * @see killIfResumeFails
+ * @see rescheduleKilledTasks
+ */
 data class Configuration(
     /**
      * The maximum cost of tasks that can be executed concurrently

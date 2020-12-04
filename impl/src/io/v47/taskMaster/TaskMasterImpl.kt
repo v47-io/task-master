@@ -34,7 +34,8 @@ package io.v47.taskMaster
 import horus.events.DefaultEventEmitter
 import horus.events.EventEmitter
 import horus.events.EventKey
-import io.v47.taskMaster.TaskState.*
+import io.v47.taskMaster.TaskState.Running
+import io.v47.taskMaster.TaskState.Suspended
 import io.v47.taskMaster.events.TaskHandleEvent
 import io.v47.taskMaster.events.TaskMasterEvent
 import io.v47.taskMaster.exceptions.ResumeFailedException
@@ -44,22 +45,20 @@ import io.v47.taskMaster.utils.ifTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.receiveOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import kotlin.coroutines.CoroutineContext
-
-private val taskScheduleableStates = setOf(Waiting, Suspended, Killed)
 
 @Suppress("TooManyFunctions")
 internal class TaskMasterImpl(
     private val configuration: Configuration,
     override val coroutineContext: CoroutineContext
 ) : TaskMaster, CoroutineScope, EventEmitter by DefaultEventEmitter() {
-    private var running = true
+    private val log = LoggerFactory.getLogger(javaClass)!!
 
     override val taskHandles: Set<TaskHandle<*, *>>
         get() = runBlocking {
@@ -95,27 +94,28 @@ internal class TaskMasterImpl(
     init {
         launch {
             while (isActive) {
-                @Suppress("EXPERIMENTAL_API_USAGE")
-                val event = eventChannel.receiveOrNull() ?: break
-                emit(event.first, event.second)
+                val (key, event) = eventChannel.receive()
+                emit(key, event)
             }
         }
     }
 
+    //region public API
     override suspend fun <I, O> add(
         factory: TaskFactory<I, O>,
         input: I,
         priority: Int,
         runCondition: RunCondition?
     ): TaskHandle<I, O> = taskHandlesMutex.withLock {
-        require(running) { "This task master was stopped. Cannot add new tasks" }
-
         @Suppress("UNCHECKED_CAST")
         val existingTaskHandle = _taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
         if (existingTaskHandle != null) {
             if (configuration.rescheduleOnAdd) {
                 existingTaskHandle.priority = priority
                 existingTaskHandle.runCondition = runCondition
+
+                if (log.isTraceEnabled)
+                    log.trace("Rescheduling existing task {}", existingTaskHandle)
 
                 scheduleTask(existingTaskHandle, force = true)
             }
@@ -135,6 +135,9 @@ internal class TaskMasterImpl(
                 cost,
                 taskHandlesSequence++
             )
+
+            if (log.isDebugEnabled)
+                log.debug("Adding new task {}", taskHandle)
 
             _taskHandles.add(taskHandle)
             eventChannel.send(TaskMasterEvent.TaskAdded to TaskMasterEvent.TaskAdded(taskHandle))
@@ -162,6 +165,9 @@ internal class TaskMasterImpl(
                     taskHandle in runningTaskHandles && taskHandle.state == Running &&
                     (force || currentDebt <= desiredDebt)
                 ) {
+                    if (log.isDebugEnabled)
+                        log.debug("Attempting to{} suspend task {}", if (force) " forcefully" else "", taskHandle)
+
                     if (force)
                         killSuspendedUntil(desiredDebt = desiredDebt)
 
@@ -169,6 +175,9 @@ internal class TaskMasterImpl(
                         taskHandle.suspend()
                             .getOrElse { throw SuspendFailedException(taskHandle, it) }
                             .ifTrue {
+                                if (log.isTraceEnabled)
+                                    log.trace("Suspended task {}", taskHandle)
+
                                 runningTaskHandles.remove(taskHandle)
 
                                 if (consumeFreedBudget)
@@ -194,6 +203,9 @@ internal class TaskMasterImpl(
                 taskHandle in suspendedTaskHandles && taskHandle.state == Suspended &&
                 (force || availableBudget >= taskHandle.cost)
             ) {
+                if (log.isDebugEnabled)
+                    log.debug("Attempting to{} resume task {}", if (force) " forcefully" else "", taskHandle)
+
                 if (force) {
                     trySuspendingRunningTasksUntil(taskHandle.cost)
                     killRunningTasksUntil(taskHandle.cost)
@@ -203,6 +215,9 @@ internal class TaskMasterImpl(
                     taskHandle.resume()
                         .getOrElse { throw ResumeFailedException(taskHandle, it) }
                         .ifTrue {
+                            if (log.isTraceEnabled)
+                                log.trace("Resumed task {}", taskHandle)
+
                             suspendedTaskHandles.remove(taskHandle)
                             runningTaskHandles.add(taskHandle)
                         }
@@ -212,19 +227,27 @@ internal class TaskMasterImpl(
                 false
         }
 
-    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean) =
+    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean, consumeFreedBudget: Boolean) =
         taskHandlesMutex.withLock {
             require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
 
             doKillTaskHandle(taskHandle, remove)
+
+            if (consumeFreedBudget) {
+                // Need to temporarily remove the task so that it isn't
+                // restarted immediately
+                val didExist = _taskHandles.remove(taskHandle)
+
+                consumeRemainingBudget()
+
+                // Here add it again after other tasks were started or resumed
+                if (didExist)
+                    _taskHandles.add(taskHandle)
+            }
         }
+    //endregion
 
-    private fun addTaskHandleEventListeners(taskHandle: TaskHandleImpl<*, *>) {
-        taskHandle.on(TaskHandleEvent.StateChanged, this::taskHandleOnStateChanged)
-        taskHandle.on(TaskHandleEvent.Failed, this::taskHandleOnFailed)
-        taskHandle.on(TaskHandleEvent.Completed, this::taskHandleOnCompleted)
-    }
-
+    //region task handle event listeners
     private suspend fun taskHandleOnStateChanged(e: TaskHandleEvent.StateChanged) {
         eventChannel.send(
             TaskMasterEvent.TaskStateChanged to TaskMasterEvent.TaskStateChanged(
@@ -236,6 +259,8 @@ internal class TaskMasterImpl(
     }
 
     private suspend fun taskHandleOnFailed(e: TaskHandleEvent.Failed) {
+        log.warn("Task failed: ${e.taskHandle}", e.error)
+
         taskHandlesMutex.withLock {
             _taskHandles.remove(e.taskHandle)
             runningTaskHandles.remove(e.taskHandle)
@@ -248,6 +273,9 @@ internal class TaskMasterImpl(
     }
 
     private suspend fun taskHandleOnCompleted(e: TaskHandleEvent.Completed) {
+        if (log.isDebugEnabled)
+            log.debug("Task complete: {}", e.taskHandle)
+
         taskHandlesMutex.withLock {
             _taskHandles.remove(e.taskHandle)
             runningTaskHandles.remove(e.taskHandle)
@@ -257,21 +285,34 @@ internal class TaskMasterImpl(
             consumeRemainingBudget()
         }
     }
+    //endregion
+
+    //region task handle event support functions
+    private fun addTaskHandleEventListeners(taskHandle: TaskHandleImpl<*, *>) {
+        taskHandle.on(TaskHandleEvent.StateChanged, this::taskHandleOnStateChanged)
+        taskHandle.on(TaskHandleEvent.Failed, this::taskHandleOnFailed)
+        taskHandle.on(TaskHandleEvent.Completed, this::taskHandleOnCompleted)
+    }
 
     private fun removeTaskHandleEventListeners(taskHandle: TaskHandleImpl<*, *>) {
         taskHandle.remove(this::taskHandleOnStateChanged)
         taskHandle.remove(this::taskHandleOnFailed)
         taskHandle.remove(this::taskHandleOnCompleted)
     }
+    //endregion
 
+    //region private support functions
     private suspend fun scheduleTask(taskHandle: TaskHandleImpl<*, *>, force: Boolean): Boolean =
-        if (taskHandle.state in taskScheduleableStates) {
-            if (
-                (force || availableBudget >= taskHandle.cost) &&
-                taskHandle.runCondition?.invoke() != false
-            ) {
-                trySuspendingRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
-                killRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
+        if (taskHandle.isScheduleable) {
+            if (taskHandle.runCondition?.invoke() != false) {
+                if (log.isTraceEnabled)
+                    log.trace("Trying to run or resume task {}", taskHandle)
+
+                if (availableBudget < taskHandle.cost)
+                    trySuspendingRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
+
+                if (force)
+                    killRunningTasksUntil(desiredAvailableBudget = taskHandle.cost)
 
                 val didStart = if (availableBudget >= taskHandle.cost)
                     startOrResumeTask(taskHandle)
@@ -302,21 +343,28 @@ internal class TaskMasterImpl(
             if (!runningTaskHandle.suspendable)
                 continue
 
+            if (log.isTraceEnabled)
+                log.trace("Trying to suspend task {}", runningTaskHandle)
+
             val desiredDebt = maximumDebt - runningTaskHandle.cost
 
             killSuspendedUntil(desiredDebt = desiredDebt)
 
             if (currentDebt <= desiredDebt) {
-                runningTaskHandlesIter.remove()
-
                 runningTaskHandle.suspend()
                     .getOrElse {
+                        if (log.isDebugEnabled)
+                            log.debug("Failed to suspend task $runningTaskHandle", it)
+
                         if (configuration.killIfSuspendFails)
                             doKillTaskHandle(runningTaskHandle, remove = !configuration.rescheduleKilledTasks)
 
                         false
                     }
                     .ifTrue {
+                        if (log.isTraceEnabled)
+                            log.trace("Suspended task {}", runningTaskHandle)
+
                         runningTaskHandlesIter.remove()
                         suspendedTaskHandles.add(runningTaskHandle)
                     }
@@ -358,8 +406,8 @@ internal class TaskMasterImpl(
     }
 
     private suspend fun consumeRemainingBudget() {
-        if (availableBudget <= 0.0)
-            return
+        if (log.isTraceEnabled)
+            log.trace("Consuming remaining budget")
 
         val suspendedTaskHandlesIter = suspendedTaskHandles.descendingIterator()
         while (availableBudget > 0.0 && suspendedTaskHandlesIter.hasNext()) {
@@ -373,42 +421,67 @@ internal class TaskMasterImpl(
         while (availableBudget > 0.0 && taskHandlesIter.hasNext()) {
             val taskHandle = taskHandlesIter.next()
 
-            if (taskHandle.isRunnable && availableBudget >= taskHandle.cost)
+            if (
+                taskHandle.isScheduleable && availableBudget >= taskHandle.cost &&
+                taskHandle.runCondition?.invoke() != false
+            )
                 startOrResumeTask(taskHandle)
         }
     }
 
-    private suspend fun startOrResumeTask(taskHandle: TaskHandleImpl<*, *>): Boolean {
-        return if (taskHandle.state == Waiting || taskHandle.state == Killed) {
-            val didStart = taskHandle.run()
-            if (didStart)
-                runningTaskHandles.add(taskHandle)
+    private suspend fun startOrResumeTask(taskHandle: TaskHandleImpl<*, *>): Boolean =
+        when {
+            taskHandle.isRunnable -> {
+                val didStart = taskHandle.run()
+                if (didStart) {
+                    if (log.isTraceEnabled)
+                        log.trace("Started task {}", taskHandle)
 
-            didStart
-        } else if (taskHandle.state == Suspended) {
-            taskHandle.resume()
-                .getOrElse {
-                    if (configuration.killIfResumeFails)
-                        doKillTaskHandle(taskHandle, remove = !configuration.rescheduleKilledTasks)
-
-                    false
-                }.ifTrue {
-                    suspendedTaskHandles.remove(taskHandle)
                     runningTaskHandles.add(taskHandle)
                 }
-        } else
-            throw IllegalStateException("Tried to call startOrResumeTask on a task handle that's not runnable")
-    }
+
+                didStart
+            }
+            taskHandle.isResumeable -> {
+                taskHandle.resume()
+                    .getOrElse {
+                        if (log.isDebugEnabled)
+                            log.debug("Failed to resume task $taskHandle", it)
+
+                        if (configuration.killIfResumeFails)
+                            doKillTaskHandle(taskHandle, remove = !configuration.rescheduleKilledTasks)
+
+                        false
+                    }.ifTrue {
+                        if (log.isTraceEnabled)
+                            log.trace("Resumed task {}", taskHandle)
+
+                        suspendedTaskHandles.remove(taskHandle)
+                        runningTaskHandles.add(taskHandle)
+                    }
+            }
+            else -> throw IllegalStateException(
+                "Tried to call startOrResumeTask on a task handle " +
+                        "that's not runnable or resumeable"
+            )
+        }
 
     private suspend fun doKillTaskHandle(taskHandle: TaskHandleImpl<*, *>, remove: Boolean = false) {
+        if (log.isTraceEnabled)
+            log.trace("Killing task {}", taskHandle)
+
         runningTaskHandles.remove(taskHandle)
         suspendedTaskHandles.remove(taskHandle)
 
         taskHandle.kill()
 
         if (remove || !configuration.rescheduleKilledTasks) {
+            if (log.isTraceEnabled)
+                log.trace("Removing killed task {}", taskHandle)
+
             removeTaskHandleEventListeners(taskHandle)
             _taskHandles.remove(taskHandle)
         }
     }
+    //endregion
 }
