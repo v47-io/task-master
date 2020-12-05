@@ -75,7 +75,7 @@ class TaskMasterImplTest {
     }
 
     @Test
-    fun `it correctly runs multiple tasks`()  = withCoroutineContext {
+    fun `it correctly runs multiple tasks`() = withCoroutineContext {
         val taskMaster = TaskMaster {
             totalBudget = 10.0
             coroutineContext = it
@@ -194,5 +194,178 @@ class TaskMasterImplTest {
         delay(50)
 
         assertEquals(TaskState.Killed, firstTaskHandle.state)
+    }
+
+    @Test
+    fun `it kills a suspended task to reduce debt`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            maximumDebt = 10.0
+            rescheduleKilledTasks = true
+            coroutineContext = it
+        }
+
+        val taskToBeSuspendedThenKilled = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 5.0,
+                suspendable = true,
+                setSuspended = true
+            ),
+            TaskPriority.LOW
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Running, taskToBeSuspendedThenKilled.state)
+
+        val taskToBeSuspended = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 7.0,
+                suspendable = true,
+                setSuspended = true
+            ),
+            TaskPriority.NORMAL
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Running, taskToBeSuspended.state)
+        assertEquals(TaskState.Suspended, taskToBeSuspendedThenKilled.state)
+
+        val finalTask = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0, duration = 200),
+            TaskPriority.HIGH
+        )
+
+        assertEquals(TaskState.Running, finalTask.state)
+        assertEquals(TaskState.Suspended, taskToBeSuspended.state)
+        assertEquals(TaskState.Killed, taskToBeSuspendedThenKilled.state)
+
+        finalTask.deferredOnce(TaskHandleEvent.Completed).await()
+
+        assertEquals(TaskState.Complete, finalTask.state)
+        assertEquals(TaskState.Running, taskToBeSuspended.state)
+        assertEquals(TaskState.Killed, taskToBeSuspendedThenKilled.state)
+
+        taskToBeSuspended.deferredOnce(TaskHandleEvent.Completed).await()
+
+        assertEquals(TaskState.Complete, finalTask.state)
+        assertEquals(TaskState.Complete, taskToBeSuspended.state)
+        assertEquals(TaskState.Running, taskToBeSuspendedThenKilled.state)
+
+        taskToBeSuspendedThenKilled.deferredOnce(TaskHandleEvent.Completed).await()
+
+        assertEquals(TaskState.Complete, finalTask.state)
+        assertEquals(TaskState.Complete, taskToBeSuspended.state)
+        assertEquals(TaskState.Complete, taskToBeSuspendedThenKilled.state)
+    }
+
+    @Test
+    fun `it kills a task that failed to suspend`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            maximumDebt = 5.0
+            killIfSuspendFails = true
+            coroutineContext = it
+        }
+
+        val taskToBeKilled = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 5.0,
+                suspendable = true,
+                setSuspended = true,
+                failToSuspend = true
+            )
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Running, taskToBeKilled.state)
+
+        val secondTask = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0),
+            TaskPriority.HIGH
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Killed, taskToBeKilled.state)
+        assertEquals(TaskState.Running, secondTask.state)
+
+        secondTask.deferredOnce(TaskHandleEvent.Completed).await()
+
+        delay(50)
+
+        assertEquals(TaskState.Killed, taskToBeKilled.state)
+        assertEquals(TaskState.Complete, secondTask.state)
+    }
+
+    @Test
+    fun `it kills a task that failed to resume`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            maximumDebt = 5.0
+            killIfResumeFails = true
+            coroutineContext = it
+        }
+
+        val taskThatSuspends = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 5.0,
+                suspendable = true,
+                setSuspended = true,
+                failToResume = true
+            )
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Running, taskThatSuspends.state)
+
+        val secondTask = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0),
+            TaskPriority.HIGH
+        )
+
+        delay(50)
+
+        assertEquals(TaskState.Suspended, taskThatSuspends.state)
+        assertEquals(TaskState.Running, secondTask.state)
+
+        secondTask.deferredOnce(TaskHandleEvent.Completed).await()
+
+        delay(50)
+
+        assertEquals(TaskState.Killed, taskThatSuspends.state)
+        assertEquals(TaskState.Complete, secondTask.state)
+    }
+
+    @Test
+    fun `it handles the failure of a task`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 10.0
+            coroutineContext = it
+        }
+
+        val failingTask = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 7.0, failWhileRunning = true)
+        )
+
+        failingTask.deferredOnce(TaskHandleEvent.Failed).await()
+
+        assertEquals(TaskState.Failed, failingTask.state)
+
+        assertEquals(
+            emptySet<TaskHandle<*, *>>(),
+            taskMaster.taskHandles
+        )
     }
 }

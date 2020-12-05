@@ -81,6 +81,7 @@ interface TaskMaster : EventEmitter {
          *
          * @param[configuration] The configuration for the task master
          * @param[coroutineContext] The coroutine context to use when running tasks
+         *                          (default: [Dispatchers.Default])
          *
          * @see Configuration.Builder.coroutineContext
          */
@@ -146,12 +147,19 @@ interface TaskMaster : EventEmitter {
      * the priority set to [Int.MAX_VALUE]. This is however extremely discouraged
      * behavior as it defeats the purpose of the task master.
      *
+     * Note that the task master will always respect the [runCondition] if one was specified,
+     * no matter how many times this function is called or what the priority is. However,
+     * the `runCondition` only affects a start from the beginning, it's not used when
+     * the task is resumed from a suspended state.
+     *
      * @param[factory] The task factory that will create the actual task that will be executed
      * @param[input] The input for the task
      * @param[priority] The priority of the task.
      *                  This may be reset on repeated calls to this function
+     *                  (default: [TaskPriority.NORMAL])
      * @param[runCondition] The condition that decides whether the task will run.
      *                      This may be reset on repeated calls to this function
+     *                      (default: `null`)
      *
      * @return A task handle for the new task or an existing one
      */
@@ -180,9 +188,10 @@ interface TaskMaster : EventEmitter {
      *
      * @param[taskHandle] The task handle that identifies the task to suspend
      * @param[force] Indicates whether to try forcing to suspend by killing other
-     *               suspended tasks
+     *               suspended tasks (default: `false`)
      * @param[consumeFreedBudget] Indicates whether the task master should try to
      *                            use the freed budget to run or resume other tasks
+     *                            (default: `true`)
      *
      * @return A boolean that indicates whether the task was suspended
      * @throws SuspendFailedException if the suspend operation of the task failed
@@ -208,7 +217,7 @@ interface TaskMaster : EventEmitter {
      *
      * @param[taskHandle] The task handle that identifies the task to resume
      * @param[force] Indicates whether to try forcing to resume by suspending or killing
-     *               other running tasks
+     *               other running tasks (default: `force`)
      *
      * @return A boolean that indicates whether the task was resumed
      * @throws ResumeFailedException if the resume operation of the task failed with
@@ -224,15 +233,18 @@ interface TaskMaster : EventEmitter {
      *
      * @param[taskHandle] The task handle that identifies the task to kill
      * @param[remove] Indicates whether to remove the task entirely. This will prevent it
-     *                from being re-run at a later time
+     *                from being re-run at a later time (default: `false`)
      * @param[consumeFreedBudget] Indicates whether the task master should try to use the
-     *                            freed budget to run or resume other tasks
+     *                            freed budget to run or resume other tasks (default: `true`)
      */
     suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false, consumeFreedBudget: Boolean = true)
 }
 
 /**
  * Contains all configuration properties for `TaskMaster` instances.
+ *
+ * Except for `totalBudget` all properties are optional and are set to
+ * sensible default values.
  *
  * @see totalBudget
  * @see maximumDebt
@@ -245,50 +257,66 @@ interface TaskMaster : EventEmitter {
  */
 data class Configuration(
     /**
-     * The maximum cost of tasks that can be executed concurrently
+     * The maximum cost of tasks that can be executed concurrently.
+     *
+     * This is the only required configuration property
      */
     val totalBudget: Double,
     /**
      * The maximum cost of tasks that can be suspended at the
      * same time.
      *
-     * Tasks will not be suspended if this is `null`
+     * Tasks will not be suspended if this is `null`.
+     *
+     * Default: `null`
      */
     val maximumDebt: Double? = null,
     /**
      * Indicates whether tasks should be rescheduled for immediate
-     * execution if added repeatedly
+     * execution if added repeatedly.
+     *
+     * Default: `true`
      */
     val rescheduleOnAdd: Boolean = true,
     /**
      * Indicates whether running tasks should be killed if budget
-     * is required to schedule new tasks
+     * is required to schedule new tasks.
+     *
+     * Default: `true`
      */
     val killRunningTasks: Boolean = true,
     /**
      * Indicates whether suspended tasks should be killed to decrease
      * the current debt when trying to suspend other tasks.
      *
-     * This has no effect if no [maximumDebt] is configured
+     * This has no effect if no [maximumDebt] is configured.
+     *
+     * Default: `true`
      */
     val killSuspended: Boolean = true,
     /**
      * Indicates whether to kill a task if its suspension failed.
      *
-     * This has no effect if no [maximumDebt] is configured
+     * This has no effect if no [maximumDebt] is configured.
+     *
+     * Default: `false`
      */
     val killIfSuspendFails: Boolean = false,
     /**
      * Indicates whether to kill a task if its resumption failed.
      *
-     * This has no effect if no [maximumDebt] is configured
+     * This has no effect if no [maximumDebt] is configured.
+     *
+     * Default: `true`
      */
     val killIfResumeFails: Boolean = true,
     /**
      * Indicates whether to reschedule previously killed tasks when
      * budget becomes available.
      *
-     * Tasks are immediately discarded if this is `false`
+     * Tasks are immediately discarded if this is `false`.
+     *
+     * Default: `false`
      */
     val rescheduleKilledTasks: Boolean = false,
 ) {
@@ -406,6 +434,7 @@ private class ConfigurationBuilderImpl : Configuration.Builder {
             killRunningTasks,
             killSuspended,
             killIfSuspendFails,
+            killIfResumeFails,
             rescheduleKilledTasks
         )
 }

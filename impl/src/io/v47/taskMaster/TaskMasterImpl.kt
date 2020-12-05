@@ -160,11 +160,7 @@ internal class TaskMasterImpl(
 
                 val desiredDebt = maximumDebt - taskHandle.cost
 
-                @Suppress("ComplexCondition")
-                if (
-                    taskHandle in runningTaskHandles && taskHandle.state == Running &&
-                    (force || currentDebt <= desiredDebt)
-                ) {
+                if (taskHandle in runningTaskHandles && taskHandle.state == Running) {
                     if (log.isDebugEnabled)
                         log.debug("Attempting to{} suspend task {}", if (force) " forcefully" else "", taskHandle)
 
@@ -198,10 +194,11 @@ internal class TaskMasterImpl(
         taskHandlesMutex.withLock {
             require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
 
-            @Suppress("ComplexCondition")
             if (taskHandle in suspendedTaskHandles && taskHandle.state == Suspended) {
                 if (log.isDebugEnabled)
                     log.debug("Attempting to{} resume task {}", if (force) " forcefully" else "", taskHandle)
+
+                val availableBudgetBefore = availableBudget
 
                 if (availableBudget < taskHandle.cost)
                     trySuspendingRunningTasks(
@@ -214,13 +211,24 @@ internal class TaskMasterImpl(
 
                 if (availableBudget >= taskHandle.cost)
                     taskHandle.resume()
-                        .getOrElse { throw ResumeFailedException(taskHandle, it) }
+                        .getOrElse {
+                            // This is done so that no available budget is wasted just
+                            // because the task failed to resume
+                            if (availableBudget > availableBudgetBefore)
+                                consumeRemainingBudget()
+
+                            throw ResumeFailedException(taskHandle, it)
+                        }
                         .ifTrue {
                             if (log.isTraceEnabled)
                                 log.trace("Resumed task {}", taskHandle)
 
                             suspendedTaskHandles.remove(taskHandle)
                             runningTaskHandles.add(taskHandle)
+
+                            // More budget may have become available than the current task
+                            // actually needs, so we try to consume it (nothing goes to waste)
+                            consumeRemainingBudget()
                         }
                 else
                     false
@@ -338,10 +346,7 @@ internal class TaskMasterImpl(
             return
 
         val runningTaskHandlesIter = runningTaskHandles.iterator()
-        while (
-            availableBudget < desiredAvailableBudget &&
-            runningTaskHandlesIter.hasNext()
-        ) {
+        while (availableBudget < desiredAvailableBudget && runningTaskHandlesIter.hasNext()) {
             val runningTaskHandle = runningTaskHandlesIter.next()
 
             if (!runningTaskHandle.suspendable || runningTaskHandle.priority > belowPriority)

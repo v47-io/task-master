@@ -41,6 +41,7 @@
     </appender>
 
     <logger name="io.v47.taskMaster" level="TRACE"/>
+    <logger name="testsupport" level="TRACE"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT"/>
