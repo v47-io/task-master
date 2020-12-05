@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class MockSuspendableTask(private val input: MockTaskInput) : SuspendableTask<MockTaskInput, Unit> {
     private var suspended = AtomicBoolean(false)
 
+    @Suppress("MagicNumber")
     override suspend fun run() {
         var msRun = 0L
         while (true) {

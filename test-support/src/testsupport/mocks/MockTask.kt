@@ -36,6 +36,7 @@ import io.v47.taskMaster.Task
 import kotlinx.coroutines.delay
 
 class MockTask(private val input: MockTaskInput) : Task<MockTaskInput, Unit>, DefaultEventEmitter() {
+    @Suppress("MagicNumber")
     override suspend fun run() {
         if (input.failWhileRunning) {
             delay(input.duration / 2)
