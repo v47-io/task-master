@@ -31,7 +31,7 @@
  */
 package testsupport.mocks
 
-import horus.events.EventKey
+import io.v47.events.EventKey
 
 data class MockTaskEvent(val somePayload: String) {
     companion object : EventKey<MockTaskEvent>

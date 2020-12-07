@@ -31,8 +31,8 @@
  */
 package testsupport.utils
 
-import horus.events.EventEmitter
-import horus.events.EventKey
+import io.v47.events.EventEmitter
+import io.v47.events.EventKey
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 

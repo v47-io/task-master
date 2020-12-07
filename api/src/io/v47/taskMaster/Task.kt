@@ -31,7 +31,7 @@
  */
 package io.v47.taskMaster
 
-import horus.events.EventEmitter
+import io.v47.events.EventEmitter
 
 /**
  * A `Task` represents a unit of work that is done using information that

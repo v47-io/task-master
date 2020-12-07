@@ -1,13 +1,3 @@
-/*buildscript {
-    repositories {
-        maven { url nexusUrl }
-    }
-
-    dependencies {
-        classpath 'org.jetbrains.kotlinx:binary-compatibility-validator:0.2.3'
-    }
-}*/
-
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.4.20' apply false
 
@@ -17,18 +7,16 @@ plugins {
     id 'jacoco'
     id 'de.jansauer.printcoverage' version '2.0.0'
 
+    id 'org.jetbrains.dokka' version '1.4.20' apply false
     id 'net.researchgate.release' version '2.8.1'
 
     id 'com.github.hierynomus.license' version '0.15.0' apply false
+
+    id 'maven-publish'
+    id 'name.remal.maven-publish-ossrh' version '1.1.4' apply false
 }
 
-//apply plugin: 'binary-compatibility-validator'
-
 apply from: 'config/gradle/libraries.gradle'
-
-/*apiValidation {
-    ignoredProjects += ['impl']
-}*/
 
 subprojects {
     apply plugin: 'org.jetbrains.kotlin.jvm'
@@ -38,6 +26,7 @@ subprojects {
 
     apply plugin: 'com.github.hierynomus.license'
 
+    apply plugin: 'org.jetbrains.dokka'
     apply plugin: 'maven-publish'
 
     sourceSets {
@@ -81,7 +70,7 @@ subprojects {
                     '-Xno-param-assertions',
                     '-Xno-call-assertions'
             ]
-            jvmTarget = '1.6'
+            jvmTarget = '1.8'
             javaParameters = true
         }
     }
@@ -94,7 +83,8 @@ subprojects {
     }
 
     repositories {
-        maven { url nexusUrl }
+        jcenter()
+        mavenCentral()
     }
 
     apply from: '../config/gradle/libraries.gradle'
@@ -149,39 +139,25 @@ subprojects {
         }
     }
 
-    task packageSources(type: Jar) {
+    task sourcesJar(type: Jar) {
         archiveClassifier = 'sources'
         from sourceSets.main.allSource
     }
 
-    artifacts.archives packageSources
+    task javadocJar(type: Jar, dependsOn: dokkaJavadoc) {
+        archiveClassifier = 'javadoc'
+        from dokkaJavadoc.outputDirectory
+    }
 
-    publishing {
-        def nexusUser = project.hasProperty('nexusUser') ? project.property('nexusUser') : System.getenv('NEXUS_USER')
-        def nexusPass = project.hasProperty('nexusPass') ? project.property('nexusPass') : System.getenv('NEXUS_PASS')
-
-        if (nexusUser != null && nexusPass != null) {
-            repositories {
-                maven {
-                    name 'nexus'
-
-                    if (project.version.endsWith('-SNAPSHOT'))
-                        url 'https://nexus.vemilyus.com/repository/snapshots/'
-                    else
-                        url 'https://nexus.vemilyus.com/repository/releases/'
-
-                    credentials(PasswordCredentials) {
-                        username nexusUser
-                        password nexusPass
-                    }
-                }
-            }
-        }
+    artifacts {
+        archives(sourcesJar)
+        archives(javadocJar)
     }
 }
 
 repositories {
-    maven { url nexusUrl }
+    jcenter()
+    mavenCentral()
 }
 
 release {

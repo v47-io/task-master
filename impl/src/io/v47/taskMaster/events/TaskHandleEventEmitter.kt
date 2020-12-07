@@ -31,9 +31,9 @@
  */
 package io.v47.taskMaster.events
 
-import horus.events.DefaultEventEmitter
-import horus.events.EventEmitter
-import horus.events.EventKey
+import io.v47.events.DefaultEventEmitter
+import io.v47.events.EventEmitter
+import io.v47.events.EventKey
 import io.v47.taskMaster.Task
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue

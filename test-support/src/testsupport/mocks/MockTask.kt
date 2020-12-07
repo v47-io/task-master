@@ -31,7 +31,7 @@
  */
 package testsupport.mocks
 
-import horus.events.DefaultEventEmitter
+import io.v47.events.DefaultEventEmitter
 import io.v47.taskMaster.Task
 import kotlinx.coroutines.delay
 

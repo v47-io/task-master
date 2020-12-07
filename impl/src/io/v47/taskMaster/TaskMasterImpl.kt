@@ -31,9 +31,9 @@
  */
 package io.v47.taskMaster
 
-import horus.events.DefaultEventEmitter
-import horus.events.EventEmitter
-import horus.events.EventKey
+import io.v47.events.DefaultEventEmitter
+import io.v47.events.EventEmitter
+import io.v47.events.EventKey
 import io.v47.taskMaster.TaskState.Running
 import io.v47.taskMaster.TaskState.Suspended
 import io.v47.taskMaster.events.TaskHandleEvent

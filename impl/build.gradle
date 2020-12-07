@@ -1,9 +1,42 @@
 apply from: '../config/gradle/library.gradle'
 
 dependencies {
-    implementation project(':api')
+    implementation project(':task-master-api')
     implementation libraries.coroutines
 
     testImplementation project(':test-support')
     testRuntimeOnly libraries.logback
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            pom {
+                name = 'Task Master for Kotlin (Implementation)'
+                description = 'An unfair, concurrent work scheduler prioritizing newer and high-priority tasks over older, low-priority tasks.'
+                url = 'https://github.com/v47-io/task-master'
+
+                licenses {
+                    license {
+                        name = 'BSD 3-Clause License'
+                        url = 'https://opensource.org/licenses/BSD-3-Clause'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'vemilyus'
+                        name = 'Alex Katlein'
+                        email = 'dev@vemilyus.com'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/v47-io/task-master.git'
+                    developerConnection = 'scm:git:git://github.com/v47-io/task-master.git'
+                    url = 'https://github.com/v47-io/task-master'
+                }
+            }
+        }
+    }
 }

@@ -31,7 +31,7 @@
  */
 package io.v47.taskMaster
 
-import horus.events.EventEmitter
+import io.v47.events.EventEmitter
 import io.v47.taskMaster.exceptions.ResumeFailedException
 import io.v47.taskMaster.exceptions.SuspendFailedException
 import io.v47.taskMaster.spi.TaskMasterProvider

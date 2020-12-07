@@ -4,7 +4,7 @@ ext {
 
     // Implementation libraries
     coroutinesVersion = '1.4.1'
-    horusEventsVersion = '2.1.0'
+    eventsVersion = '1.0.1'
 
     // Testing libraries
     junitVersion = '5.7.0'
@@ -16,7 +16,7 @@ ext {
 
             // Implementation libraries
             coroutines : "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion",
-            horusEvents: "com.vemilyus.horus:horus-events:$horusEventsVersion",
+            horusEvents: "io.v47:events:$eventsVersion",
 
             // Testing libraries
             junit      : "org.junit.jupiter:junit-jupiter:$junitVersion",

@@ -1,13 +1,37 @@
 publishing {
     publications {
-        mavenProject(MavenPublication) {
-            from components.java
+        maven(MavenPublication) {
             groupId project.group
             artifactId project.name
             version project.version
 
-            artifact packageSources {
+            from components.java
+
+            artifact sourcesJar {
                 classifier 'sources'
+            }
+
+            artifact javadocJar {
+                classifier 'javadoc'
+            }
+        }
+    }
+}
+
+def ossrhUser = project.hasProperty('ossrhUser') ? project.property('ossrhUser') : System.getenv('OSSRH_USER')
+def ossrhPass = project.hasProperty('ossrhPass') ? project.property('ossrhPass') : System.getenv('OSSRH_PASS')
+
+if (ossrhUser != null && ossrhPass != null /*&& !project.version.endsWith('-SNAPSHOT')*/) {
+    apply plugin: 'signing'
+    apply plugin: 'name.remal.maven-publish-ossrh'
+
+    publishing {
+        repositories {
+            ossrh {
+                credentials {
+                    username = ossrhUser
+                    password = ossrhPass
+                }
             }
         }
     }

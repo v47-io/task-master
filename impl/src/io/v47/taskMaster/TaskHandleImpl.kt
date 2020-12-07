@@ -31,7 +31,7 @@
  */
 package io.v47.taskMaster
 
-import horus.events.EventKey
+import io.v47.events.EventKey
 import io.v47.taskMaster.events.TaskHandleEvent
 import io.v47.taskMaster.events.TaskHandleEventEmitter
 import io.v47.taskMaster.utils.identityToString

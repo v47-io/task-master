@@ -1,9 +1,13 @@
 pluginManagement {
     repositories {
-        maven { url nexusUrl }
+        gradlePluginPortal()
+        jcenter()
     }
 }
 
 rootProject.name = 'task-master'
 
 include 'api', 'test-support', 'impl'
+
+project(':api').name = 'task-master-api'
+project(':impl').name = 'task-master-impl'
