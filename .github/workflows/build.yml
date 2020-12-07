@@ -34,6 +34,12 @@ jobs:
         with:
           arguments: --console=plain publish
           execution-only-caches: true
+        env:
+          OSSRH_USER: ${{ secrets.OSSRH_USER }}
+          OSSRH_PASS: ${{ secrets.OSSRH_PASS }}
+          SIGNING_PASSWORD: ${{ secrets.OSSRH_SIGNING_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.OSSRH_SIGNING_KEY_ID }}
+          SIGNING_SECRET_KEY_RING_BASE64: ${{ secrets.OSSRH_SIGNING_SECRET_KEY_RING_BASE64 }}
       - name: Publish to Central Repository
         if: ${{ !endsWith(steps.version_property.outputs.value, '-SNAPSHOT') }}
         uses: burrunan/gradle-cache-action@v1
