@@ -35,6 +35,9 @@ import io.v47.taskMaster.Configuration
 import io.v47.taskMaster.TaskMaster
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * Creates an instance of the implementation of [TaskMaster].
+ */
 interface TaskMasterProvider {
     fun create(
         configuration: Configuration,

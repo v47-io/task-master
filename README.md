@@ -12,4 +12,37 @@
 
 - Kotlin 1.4.20
 
-  This is a hard requirement because __TaskMaster__ works exclusively with coroutines when executing tasks
+  This is a hard requirement because __TaskMaster__'s API consists mainly of suspending functions
+  and uses coroutines to schedule and run the tasks.
+
+- Java >= 1.8
+
+## Download
+
+The library is available in the Central Repository (_soon_)
+
+```groovy
+repositories {
+  maven { mavenCentral() }
+}
+
+dependencies {
+  implementation 'io.v47.task-master:task-master-api:1.0.0'
+  runtimeOnly    'io.v47.task-master:task-master-impl:1.0.0'
+}
+```
+
+Or for the latest snapshot version
+
+```groovy
+repositories {
+  maven {
+    name 'oss-sonatype'
+    url 'https://oss.sonatype.org/content/repositories/snapshots/'
+  }
+}
+```
+
+## License
+
+TaskMaster is released under the terms of the BSD 3-clause license

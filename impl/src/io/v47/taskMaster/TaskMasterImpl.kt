@@ -108,7 +108,8 @@ internal class TaskMasterImpl(
         runCondition: RunCondition?
     ): TaskHandle<I, O> = taskHandlesMutex.withLock {
         @Suppress("UNCHECKED_CAST")
-        val existingTaskHandle = _taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
+        val existingTaskHandle =
+            _taskHandles.find { it.matches(factory, input) } as? TaskHandleImpl<I, O>
         if (existingTaskHandle != null) {
             if (configuration.rescheduleOnAdd) {
                 existingTaskHandle.priority = priority
@@ -162,10 +163,17 @@ internal class TaskMasterImpl(
 
                 if (taskHandle in runningTaskHandles && taskHandle.state == Running) {
                     if (log.isDebugEnabled)
-                        log.debug("Attempting to{} suspend task {}", if (force) " forcefully" else "", taskHandle)
+                        log.debug(
+                            "Attempting to{} suspend task {}",
+                            if (force) " forcefully" else "",
+                            taskHandle
+                        )
 
                     if (force)
-                        killSuspendedTasks(desiredDebt = desiredDebt, belowPriority = taskHandle.priority)
+                        killSuspendedTasks(
+                            desiredDebt = desiredDebt,
+                            belowPriority = taskHandle.priority
+                        )
 
                     if (currentDebt <= desiredDebt)
                         taskHandle.suspend()
@@ -175,13 +183,12 @@ internal class TaskMasterImpl(
                                     log.trace("Suspended task {}", taskHandle)
 
                                 runningTaskHandles.remove(taskHandle)
-
-                                if (consumeFreedBudget)
-                                    consumeRemainingBudget()
-
-                                // IMPORTANT: THIS MUST COME AFTER consumeRemainingBudget
-                                // Otherwise this suspended task might get resumed right away
                                 suspendedTaskHandles.add(taskHandle)
+
+                                // Need to explicitly exclude the suspended task here otherwise
+                                // it gets resumed right away
+                                if (consumeFreedBudget)
+                                    consumeRemainingBudget(except = taskHandle)
                             }
                     else
                         false
@@ -196,7 +203,11 @@ internal class TaskMasterImpl(
 
             if (taskHandle in suspendedTaskHandles && taskHandle.state == Suspended) {
                 if (log.isDebugEnabled)
-                    log.debug("Attempting to{} resume task {}", if (force) " forcefully" else "", taskHandle)
+                    log.debug(
+                        "Attempting to{} resume task {}",
+                        if (force) " forcefully" else "",
+                        taskHandle
+                    )
 
                 val availableBudgetBefore = availableBudget
 
@@ -207,7 +218,10 @@ internal class TaskMasterImpl(
                     )
 
                 if (force)
-                    killRunningTasksUntil(desiredAvailableBudget = taskHandle.cost, belowPriority = taskHandle.priority)
+                    killRunningTasksUntil(
+                        desiredAvailableBudget = taskHandle.cost,
+                        belowPriority = taskHandle.priority
+                    )
 
                 if (availableBudget >= taskHandle.cost)
                     taskHandle.resume()
@@ -236,23 +250,21 @@ internal class TaskMasterImpl(
                 false
         }
 
-    override suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean, consumeFreedBudget: Boolean) =
+    override suspend fun <I, O> kill(
+        taskHandle: TaskHandle<I, O>,
+        remove: Boolean,
+        consumeFreedBudget: Boolean
+    ) =
         taskHandlesMutex.withLock {
             require(taskHandle is TaskHandleImpl && taskHandle in _taskHandles) { "Unknown task handle" }
 
             doKillTaskHandle(taskHandle, remove)
 
-            if (consumeFreedBudget) {
-                // Need to temporarily remove the task so that it isn't
-                // restarted immediately
-                val didExist = _taskHandles.remove(taskHandle)
-
-                consumeRemainingBudget()
-
-                // Here add it again after other tasks were started or resumed
-                if (didExist)
-                    _taskHandles.add(taskHandle)
-            }
+            // Need to explicitly exclude the task here because it might
+            // get restarted immediately if the task master is configured
+            // to restart killed tasks
+            if (consumeFreedBudget)
+                consumeRemainingBudget(except = taskHandle)
         }
     //endregion
 
@@ -320,11 +332,15 @@ internal class TaskMasterImpl(
                 if (availableBudget < taskHandle.cost)
                     trySuspendingRunningTasks(
                         desiredAvailableBudget = taskHandle.cost,
-                        belowPriority = taskHandle.priority
+                        belowPriority = taskHandle.priority,
+                        ignore = taskHandle
                     )
 
                 if (force)
-                    killRunningTasksUntil(desiredAvailableBudget = taskHandle.cost, belowPriority = taskHandle.priority)
+                    killRunningTasksUntil(
+                        desiredAvailableBudget = taskHandle.cost,
+                        belowPriority = taskHandle.priority
+                    )
 
                 val didStart = if (availableBudget >= taskHandle.cost)
                     startOrResumeTask(taskHandle)
@@ -339,7 +355,11 @@ internal class TaskMasterImpl(
         } else
             false
 
-    private suspend fun trySuspendingRunningTasks(desiredAvailableBudget: Double, belowPriority: Int) {
+    private suspend fun trySuspendingRunningTasks(
+        desiredAvailableBudget: Double,
+        belowPriority: Int,
+        ignore: TaskHandleImpl<*, *>? = null
+    ) {
         val maximumDebt = configuration.maximumDebt
 
         if (availableBudget >= desiredAvailableBudget || maximumDebt == null)
@@ -357,7 +377,11 @@ internal class TaskMasterImpl(
 
             val desiredDebt = maximumDebt - runningTaskHandle.cost
 
-            killSuspendedTasks(desiredDebt = desiredDebt, belowPriority = belowPriority)
+            killSuspendedTasks(
+                desiredDebt = desiredDebt,
+                belowPriority = belowPriority,
+                ignore = ignore // Need to specify it here, because it might be suspended
+            )
 
             if (currentDebt <= desiredDebt) {
                 runningTaskHandle.suspend()
@@ -366,7 +390,10 @@ internal class TaskMasterImpl(
                             log.debug("Failed to suspend task $runningTaskHandle", it)
 
                         if (configuration.killIfSuspendFails)
-                            doKillTaskHandle(runningTaskHandle, remove = !configuration.rescheduleKilledTasks)
+                            doKillTaskHandle(
+                                runningTaskHandle,
+                                remove = !configuration.rescheduleKilledTasks
+                            )
 
                         false
                     }
@@ -381,7 +408,11 @@ internal class TaskMasterImpl(
         }
     }
 
-    private suspend fun killSuspendedTasks(desiredDebt: Double, belowPriority: Int) {
+    private suspend fun killSuspendedTasks(
+        desiredDebt: Double,
+        belowPriority: Int,
+        ignore: TaskHandleImpl<*, *>? = null
+    ) {
         if (!configuration.killSuspended)
             return
 
@@ -393,7 +424,7 @@ internal class TaskMasterImpl(
         ) {
             val suspendedTaskHandle = suspendedTaskHandlesIter.next()
 
-            if (suspendedTaskHandle.priority > belowPriority)
+            if (suspendedTaskHandle == ignore || suspendedTaskHandle.priority > belowPriority)
                 continue
 
             suspendedTaskHandlesIter.remove()
@@ -422,13 +453,15 @@ internal class TaskMasterImpl(
         }
     }
 
-    private suspend fun consumeRemainingBudget() {
+    private suspend fun consumeRemainingBudget(except: TaskHandle<*, *>? = null) {
         if (log.isTraceEnabled)
             log.trace("Consuming remaining budget")
 
         val suspendedTaskHandlesIter = suspendedTaskHandles.descendingIterator()
         while (availableBudget > 0.0 && suspendedTaskHandlesIter.hasNext()) {
             val suspendedTaskHandle = suspendedTaskHandlesIter.next()
+            if (suspendedTaskHandle == except)
+                continue
 
             if (availableBudget >= suspendedTaskHandle.cost)
                 startOrResumeTask(suspendedTaskHandle)
@@ -437,6 +470,8 @@ internal class TaskMasterImpl(
         val taskHandlesIter = _taskHandles.descendingIterator()
         while (availableBudget > 0.0 && taskHandlesIter.hasNext()) {
             val taskHandle = taskHandlesIter.next()
+            if (taskHandle == except)
+                continue
 
             if (
                 taskHandle.isScheduleable && availableBudget >= taskHandle.cost &&
@@ -466,7 +501,10 @@ internal class TaskMasterImpl(
                             log.debug("Failed to resume task $taskHandle", it)
 
                         if (configuration.killIfResumeFails)
-                            doKillTaskHandle(taskHandle, remove = !configuration.rescheduleKilledTasks)
+                            doKillTaskHandle(
+                                taskHandle,
+                                remove = !configuration.rescheduleKilledTasks
+                            )
 
                         false
                     }.ifTrue {
@@ -483,7 +521,10 @@ internal class TaskMasterImpl(
             )
         }
 
-    private suspend fun doKillTaskHandle(taskHandle: TaskHandleImpl<*, *>, remove: Boolean = false) {
+    private suspend fun doKillTaskHandle(
+        taskHandle: TaskHandleImpl<*, *>,
+        remove: Boolean = false
+    ) {
         if (log.isTraceEnabled)
             log.trace("Killing task {}", taskHandle)
 

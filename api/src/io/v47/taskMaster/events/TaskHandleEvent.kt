@@ -35,6 +35,9 @@ import io.v47.events.EventKey
 import io.v47.taskMaster.TaskHandle
 import io.v47.taskMaster.TaskState
 
+/**
+ * Provides events that are emitted by [TaskHandle].
+ */
 sealed class TaskHandleEvent {
     abstract val taskHandle: TaskHandle<*, *>
 

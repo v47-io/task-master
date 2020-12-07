@@ -77,7 +77,7 @@ interface TaskMaster : EventEmitter {
         private val providers = ServiceLoader.load(TaskMasterProvider::class.java)
 
         /**
-         * Creates a new `TaskMaster` instance using the provided implementation
+         * Creates a new `TaskMaster` instance using the provided implementation.
          *
          * @param[configuration] The configuration for the task master
          * @param[coroutineContext] The coroutine context to use when running tasks
@@ -183,7 +183,7 @@ interface TaskMaster : EventEmitter {
      * `maximumDebt` configured).
      *
      * By default the task master will try to reclaim the freed budget by running
-     * or resuming other tasks, starting with the newest tasks at the hightest
+     * or resuming other tasks, starting with the newest tasks at the highest
      * priority.
      *
      * @param[taskHandle] The task handle that identifies the task to suspend
@@ -229,7 +229,9 @@ interface TaskMaster : EventEmitter {
      * Kills the task identified by the specified task handle.
      *
      * The task may remain known to the task master and may be rescheduled to run at
-     * a later time.
+     * a later time. If this is the only task known to the task master and it's not
+     * removed, it may remain unscheduled until a new task finishes or it's restarted
+     * using [add].
      *
      * @param[taskHandle] The task handle that identifies the task to kill
      * @param[remove] Indicates whether to remove the task entirely. This will prevent it
@@ -237,7 +239,11 @@ interface TaskMaster : EventEmitter {
      * @param[consumeFreedBudget] Indicates whether the task master should try to use the
      *                            freed budget to run or resume other tasks (default: `true`)
      */
-    suspend fun <I, O> kill(taskHandle: TaskHandle<I, O>, remove: Boolean = false, consumeFreedBudget: Boolean = true)
+    suspend fun <I, O> kill(
+        taskHandle: TaskHandle<I, O>,
+        remove: Boolean = false,
+        consumeFreedBudget: Boolean = true
+    )
 }
 
 /**
@@ -412,7 +418,8 @@ data class Configuration(
 private class ConfigurationBuilderImpl : Configuration.Builder {
     private var _totalBudget: Double? = null
     override var totalBudget: Double
-        get() = _totalBudget ?: throw IllegalArgumentException("The total budget must be configured")
+        get() = _totalBudget
+            ?: throw IllegalArgumentException("The total budget must be configured")
         set(value) {
             _totalBudget = value
         }

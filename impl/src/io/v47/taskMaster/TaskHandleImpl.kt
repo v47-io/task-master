@@ -49,13 +49,13 @@ private val taskRunnableStates = setOf(TaskState.Waiting, TaskState.Killed)
 private val taskScheduleableStates = setOf(TaskState.Waiting, TaskState.Suspended, TaskState.Killed)
 private val taskResumeableStates = setOf(TaskState.Suspended)
 
-internal val TaskHandleImpl<*, *>.isRunnable: Boolean
+internal val TaskHandleImpl<*, *>.isRunnable
     get() = state in taskRunnableStates
 
-internal val TaskHandleImpl<*, *>.isScheduleable: Boolean
+internal val TaskHandleImpl<*, *>.isScheduleable
     get() = state in taskScheduleableStates
 
-internal val TaskHandleImpl<*, *>.isResumeable: Boolean
+internal val TaskHandleImpl<*, *>.isResumeable
     get() = state in taskResumeableStates
 
 @Suppress("LongParameterList")

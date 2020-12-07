@@ -33,8 +33,7 @@ package io.v47.taskMaster
 
 import io.v47.taskMaster.events.TaskHandleEvent
 import kotlinx.coroutines.delay
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import testsupport.mocks.MockTaskInput
@@ -145,8 +144,16 @@ class TaskMasterImplTest {
 
         assertEquals(
             listOf(
-                TaskHandleEvent.StateChanged(TaskState.Suspended, TaskState.Running, firstTaskHandle),
-                TaskHandleEvent.StateChanged(TaskState.Running, TaskState.Suspended, firstTaskHandle),
+                TaskHandleEvent.StateChanged(
+                    TaskState.Suspended,
+                    TaskState.Running,
+                    firstTaskHandle
+                ),
+                TaskHandleEvent.StateChanged(
+                    TaskState.Running,
+                    TaskState.Suspended,
+                    firstTaskHandle
+                ),
                 TaskHandleEvent.StateChanged(TaskState.Complete, TaskState.Running, firstTaskHandle)
             ),
             firstTaskHandleEvents
@@ -365,6 +372,113 @@ class TaskMasterImplTest {
 
         assertEquals(
             emptySet<TaskHandle<*, *>>(),
+            taskMaster.taskHandles
+        )
+    }
+
+    @Test
+    fun `it resumes a task forcefully`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            maximumDebt = 5.0
+            coroutineContext = it
+        }
+
+        val taskToResume = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 5.0,
+                suspendable = true,
+                setSuspended = true
+            )
+        )
+
+        taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0)
+        )
+
+        val taskToKill = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0)
+        )
+
+        assertEquals(TaskState.Suspended, taskToResume.state)
+        assertEquals(TaskState.Running, taskToKill.state)
+
+        delay(50)
+
+        assertFalse(taskMaster.resume(taskToResume))
+
+        assertTrue(taskMaster.resume(taskToResume, force = true))
+
+        delay(50)
+
+        assertEquals(TaskState.Running, taskToResume.state)
+        assertEquals(TaskState.Killed, taskToKill.state)
+
+        taskToResume.deferredOnce(TaskHandleEvent.Completed).await()
+
+        assertEquals(TaskState.Complete, taskToResume.state)
+        assertEquals(TaskState.Killed, taskToKill.state)
+    }
+
+    @Test
+    fun `it suspends a task`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            maximumDebt = 5.0
+            coroutineContext = it
+        }
+
+        val task = taskMaster.add(
+            mockFactory,
+            MockTaskInput(
+                cost = 5.0,
+                suspendable = true,
+                setSuspended = true
+            )
+        )
+
+        assertEquals(TaskState.Running, task.state)
+
+        delay(50)
+
+        assertTrue(taskMaster.suspend(task))
+
+        assertEquals(TaskState.Suspended, task.state)
+
+        assertTrue(taskMaster.resume(task))
+
+        assertEquals(TaskState.Running, task.state)
+
+        task.deferredOnce(TaskHandleEvent.Completed).await()
+
+        assertEquals(TaskState.Complete, task.state)
+    }
+
+    @Test
+    fun `it kills a task and doesn't restart it immediately`() = withCoroutineContext {
+        val taskMaster = TaskMaster {
+            totalBudget = 7.0
+            rescheduleKilledTasks = true
+            coroutineContext = it
+        }
+
+        val task = taskMaster.add(
+            mockFactory,
+            MockTaskInput(cost = 5.0)
+        )
+
+        delay(50)
+
+        taskMaster.kill(task)
+
+        delay(50)
+
+        assertEquals(TaskState.Killed, task.state)
+        assertEquals(
+            setOf(task),
             taskMaster.taskHandles
         )
     }
