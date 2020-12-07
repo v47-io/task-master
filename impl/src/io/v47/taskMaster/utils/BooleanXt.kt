@@ -35,7 +35,7 @@ package io.v47.taskMaster.utils
  * Runs the specified `block` if the `this` value is `true`
  * and returns `this` value.
  */
-inline fun Boolean.ifTrue(block: () -> Unit) =
+internal inline fun Boolean.ifTrue(block: () -> Unit) =
     also {
         if (it)
             block()

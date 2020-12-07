@@ -31,5 +31,5 @@
  */
 package io.v47.taskMaster.utils
 
-fun Any.identityToString() =
+internal fun Any.identityToString() =
     "${javaClass.name}@${Integer.toHexString(System.identityHashCode(this))}"
