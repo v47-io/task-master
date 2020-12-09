@@ -265,6 +265,9 @@ internal class TaskMasterImpl(
             // to restart killed tasks
             if (consumeFreedBudget)
                 consumeRemainingBudget(except = taskHandle)
+
+            if (_taskHandles.isEmpty())
+                eventChannel.send(TaskMasterEvent.NoMoreTasks to TaskMasterEvent.NoMoreTasks)
         }
     //endregion
 
@@ -290,6 +293,9 @@ internal class TaskMasterImpl(
             removeTaskHandleEventListeners(e.taskHandle as TaskHandleImpl<*, *>)
 
             consumeRemainingBudget()
+
+            if (_taskHandles.isEmpty())
+                eventChannel.send(TaskMasterEvent.NoMoreTasks to TaskMasterEvent.NoMoreTasks)
         }
     }
 
@@ -304,6 +310,9 @@ internal class TaskMasterImpl(
             removeTaskHandleEventListeners(e.taskHandle as TaskHandleImpl<*, *>)
 
             consumeRemainingBudget()
+
+            if (_taskHandles.isEmpty())
+                eventChannel.send(TaskMasterEvent.NoMoreTasks to TaskMasterEvent.NoMoreTasks)
         }
     }
     //endregion

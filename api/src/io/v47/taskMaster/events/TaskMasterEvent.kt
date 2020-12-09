@@ -52,4 +52,18 @@ sealed class TaskMasterEvent {
     ) : TaskMasterEvent() {
         companion object : EventKey<TaskStateChanged>
     }
+
+    /**
+     * This event signals that there are currently no tasks to be scheduled
+     * by the task master.
+     */
+    object NoMoreTasks : TaskMasterEvent(), EventKey<NoMoreTasks> {
+        /**
+         * Not available for this event.
+         *
+         * @throws IllegalStateException if used
+         */
+        override val taskHandle: TaskHandle<*, *>
+            get() = throw IllegalStateException("Cannot retrieve TaskHandle")
+    }
 }
