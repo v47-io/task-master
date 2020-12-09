@@ -18,7 +18,7 @@ plugins {
 
 apply from: 'config/gradle/libraries.gradle'
 
-subprojects {
+subprojects { Project subproject ->
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     apply plugin: 'io.gitlab.arturbosch.detekt'
@@ -136,6 +136,14 @@ subprojects {
 
         ext {
             year = Calendar.getInstance().get(Calendar.YEAR)
+        }
+    }
+
+    jar {
+        manifest {
+            attributes('Automatic-Module-Name': "${subproject.group}.${subproject.name}".replaceAll('[^\\w\\.\\$_]', "_"))
+            attributes('Implementation-Version': project.version)
+            attributes('Implementation-Title': 'TaskMaster for Kotlin')
         }
     }
 

@@ -4,7 +4,7 @@ ext {
 
     // Implementation libraries
     coroutinesVersion = '1.4.1'
-    eventsVersion = '1.0.1'
+    eventsVersion = '1.0.2'
 
     // Testing libraries
     junitVersion = '5.7.0'
